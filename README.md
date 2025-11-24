@@ -55,33 +55,16 @@ screenplay-ai/
 
 ## Releasing
 
-See [GETTING_STARTED.md](GETTING_STARTED.md) for initial setup.
-
 To create a new release:
 
-```bash
-# Update version in package.json
-# Commit changes
-git add .
-git commit -m "Release v1.0.1"
-git push
+1. Update version in `package.json`
+2. Commit changes: `git add . && git commit -m "Release v1.0.1"`
+3. Push: `git push origin main`
+4. Tag release: `git tag v1.0.1 && git push origin v1.0.1`
 
-# Create and push tag
-git tag v1.0.1
-git push origin v1.0.1
-```
+GitHub Actions automatically builds installers for Mac, Windows, and Linux.
 
-GitHub Actions automatically builds installers for all platforms.
-
-See [RELEASE.md](RELEASE.md) for detailed release process.
-
-## Distribution
-
-- **Website**: Hosted on Render (free)
-- **Installers**: GitHub Releases (free)
-- **Auto-updates**: electron-updater via GitHub
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment guide.
+See [RELEASE.md](RELEASE.md) and [DEPLOYMENT.md](DEPLOYMENT.md) for detailed guides.
 
 ## Tech Stack
 
