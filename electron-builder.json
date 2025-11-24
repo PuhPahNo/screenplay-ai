@@ -27,8 +27,7 @@
         ]
       }
     ],
-    "category": "public.app-category.productivity",
-    "icon": "build/icon.icns"
+    "category": "public.app-category.productivity"
   },
   "dmg": {
     "contents": [
