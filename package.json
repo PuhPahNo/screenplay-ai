@@ -13,8 +13,8 @@
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
     "electron:rebuild": "electron-rebuild",
-    "build:mac": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish always",
-    "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish always",
+    "build:mac": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "postinstall": "electron-builder install-app-deps"
