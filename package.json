@@ -14,10 +14,10 @@
     "electron:build": "vite build && electron-builder",
     "electron:rebuild": "electron-rebuild",
     "build:mac": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish always",
-    "build:win": "vite build && electron-builder --win --publish always",
-    "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --win --publish always",
+    "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish always",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
