@@ -10,6 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
 
@@ -24,6 +25,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run electron:rebuild || npx electron-builder install-app-deps
 
       - name: Build Electron app (Mac)
         if: matrix.os == 'macos-latest'
