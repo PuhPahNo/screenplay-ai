@@ -5,7 +5,7 @@ import { ProjectManager } from './project-manager';
 import { DatabaseManager } from '../database/db-manager';
 import { AIClient } from '../ai/openai-client';
 import { FountainParser } from '../screenplay/fountain-parser';
-import { setupAutoUpdater } from './auto-updater';
+import { setupAutoUpdater, checkForUpdatesManually } from './auto-updater';
 import Store from 'electron-store';
 import type { SystemActions } from '../shared/types';
 
@@ -59,11 +59,15 @@ function createMenu() {
         {
           label: 'About Screenplay AI',
           click: () => {
+            const appVersion = app.getVersion();
+            const electronVersion = process.versions.electron;
+            const platform = `${process.platform} (${process.arch})`;
+            
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
               title: 'About Screenplay AI',
               message: 'Screenplay AI',
-              detail: 'Version 1.0.0\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.',
+              detail: `Version ${appVersion}\nElectron ${electronVersion}\nPlatform: ${platform}\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.`,
             });
           },
         },
@@ -202,7 +206,6 @@ function createMenu() {
         {
           label: 'Check for Updates',
           click: () => {
-            const { checkForUpdatesManually } = require('./auto-updater');
             checkForUpdatesManually();
           },
         },
@@ -211,11 +214,15 @@ function createMenu() {
           {
             label: 'About Screenplay AI',
             click: () => {
+              const appVersion = app.getVersion();
+              const electronVersion = process.versions.electron;
+              const platform = `${process.platform} (${process.arch})`;
+              
               dialog.showMessageBox(mainWindow!, {
                 type: 'info',
                 title: 'About Screenplay AI',
                 message: 'Screenplay AI',
-                detail: 'Version 1.0.0\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.',
+                detail: `Version ${appVersion}\nElectron ${electronVersion}\nPlatform: ${platform}\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.`,
               });
             },
           },
