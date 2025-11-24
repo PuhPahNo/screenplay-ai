@@ -1,0 +1,687 @@
+import { app, BrowserWindow, ipcMain, dialog, Menu, safeStorage } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { ProjectManager } from './project-manager';
+import { DatabaseManager } from '../database/db-manager';
+import { AIClient } from '../ai/openai-client';
+import { FountainParser } from '../screenplay/fountain-parser';
+import { setupAutoUpdater } from './auto-updater';
+import Store from 'electron-store';
+import type { SystemActions } from '../shared/types';
+
+let mainWindow: BrowserWindow | null = null;
+let projectManager: ProjectManager | null = null;
+let dbManager: DatabaseManager | null = null;
+let aiClient: AIClient | null = null;
+const store = new Store();
+
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1200,
+    minHeight: 700,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    titleBarStyle: process.platform === 'darwin' ? 'default' : 'default',
+    backgroundColor: '#1a1a1a',
+    title: 'Screenplay AI',
+  });
+
+  // Load the app
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+    // Dev tools available via View menu or Cmd+Option+I
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  createMenu();
+}
+
+function createMenu() {
+  const isMac = process.platform === 'darwin';
+
+  const template: any[] = [
+    // App menu (macOS only)
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        {
+          label: 'About Screenplay AI',
+          click: () => {
+            dialog.showMessageBox(mainWindow!, {
+              type: 'info',
+              title: 'About Screenplay AI',
+              message: 'Screenplay AI',
+              detail: 'Version 1.0.0\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.',
+            });
+          },
+        },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    }] : []),
+    // File menu
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Project',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => {
+            mainWindow?.webContents.send('menu:new-project');
+          },
+        },
+        {
+          label: 'Open Project',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => {
+            mainWindow?.webContents.send('menu:open-project');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => {
+            mainWindow?.webContents.send('menu:save');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Export as PDF',
+          click: () => {
+            mainWindow?.webContents.send('menu:export-pdf');
+          },
+        },
+        ...(!isMac ? [
+          { type: 'separator' },
+          { role: 'quit' },
+        ] : []),
+      ],
+    },
+    // Edit menu
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        ...(isMac ? [
+          { role: 'pasteAndMatchStyle' },
+          { role: 'delete' },
+          { role: 'selectAll' },
+        ] : [
+          { role: 'delete' },
+          { type: 'separator' },
+          { role: 'selectAll' },
+        ]),
+      ],
+    },
+    // View menu
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    // AI menu
+    {
+      label: 'AI',
+      submenu: [
+        {
+          label: 'Toggle AI Chat',
+          accelerator: 'CmdOrCtrl+Shift+A',
+          click: () => {
+            mainWindow?.webContents.send('menu:toggle-ai-chat');
+          },
+        },
+        {
+          label: 'Analyze Storyline',
+          click: () => {
+            mainWindow?.webContents.send('menu:analyze-storyline');
+          },
+        },
+      ],
+    },
+    // Settings menu
+    {
+      label: 'Settings',
+      submenu: [
+        {
+          label: 'Preferences',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            mainWindow?.webContents.send('menu:open-settings');
+          },
+        },
+      ],
+    },
+    // Window menu (macOS specific)
+    ...(isMac ? [{
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' },
+        { type: 'separator' },
+        { role: 'window' },
+      ],
+    }] : []),
+    // Help menu
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Check for Updates',
+          click: () => {
+            const { checkForUpdatesManually } = require('./auto-updater');
+            checkForUpdatesManually();
+          },
+        },
+        ...(!isMac ? [
+          { type: 'separator' },
+          {
+            label: 'About Screenplay AI',
+            click: () => {
+              dialog.showMessageBox(mainWindow!, {
+                type: 'info',
+                title: 'About Screenplay AI',
+                message: 'Screenplay AI',
+                detail: 'Version 1.0.0\n\nProfessional screenplay writing powered by AI.\n\nBuilt with Electron, React, and OpenAI.',
+              });
+            },
+          },
+        ] : []),
+      ],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+// App lifecycle
+app.whenReady().then(() => {
+  createWindow();
+
+  // Setup auto-updater
+  if (!isDev) {
+    setupAutoUpdater();
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// IPC Handlers
+
+// Project Management
+ipcMain.handle('project:create', async (_, name: string, folderPath: string) => {
+  const projectPath = path.join(folderPath, name);
+
+  if (!fs.existsSync(projectPath)) {
+    fs.mkdirSync(projectPath, { recursive: true });
+  }
+
+  const screenplayPath = path.join(projectPath, 'screenplay.fountain');
+  const metaPath = path.join(projectPath, '.screenplay-ai');
+
+  // Create initial screenplay file with starter template
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const initialContent = `Title: ${name}
+Author: 
+Draft: First Draft
+Date: ${today}
+
+===
+
+/* 
+  Welcome to your new screenplay!
+  
+  Fountain Format Quick Reference:
+  -----------------------------------
+  Scene Heading:  INT. COFFEE SHOP - DAY
+  Action:         Jane walks into the bustling coffee shop.
+  Character:      JANE
+  Dialogue:       I'll have a double espresso, please.
+  Parenthetical:  (smiling)
+  
+  Tips:
+  - Scene headings start with INT. or EXT.
+  - Character names are in ALL CAPS
+  - Dialogue goes directly below character names
+  - Use Cmd+S (or Ctrl+S) to save
+  
+  AI Features:
+  - Click the AI button (bottom right) for writing assistance
+  - Use the AI Chat to discuss characters and plot
+  - Check "Scenes" tab to see your story structure
+  
+  Start writing your masterpiece below...
+*/
+
+`;
+  fs.writeFileSync(screenplayPath, initialContent, 'utf-8');
+
+  // Create metadata folder
+  if (!fs.existsSync(metaPath)) {
+    fs.mkdirSync(metaPath, { recursive: true });
+  }
+
+  // Initialize project manager
+  projectManager = new ProjectManager(projectPath);
+
+  // Initialize database
+  const dbPath = path.join(metaPath, 'project.db');
+  dbManager = new DatabaseManager(dbPath);
+
+  // Decrypt and use stored API key
+  const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;
+  let apiKey = '';
+
+  if (encryptedKey && safeStorage.isEncryptionAvailable()) {
+    try {
+      const buffer = Buffer.from(encryptedKey, 'base64');
+      apiKey = safeStorage.decryptString(buffer);
+    } catch (error) {
+      console.error('[Main] Failed to decrypt API key:', error);
+    }
+  }
+
+  if (apiKey && apiKey.length > 20) {
+    const systemActions: SystemActions = {
+      saveScreenplay: async () => {
+        if (projectManager) {
+          const content = await projectManager.loadScreenplay();
+          await projectManager.saveScreenplay(content);
+        }
+      },
+      exportScreenplay: async (format) => {
+        if (projectManager) {
+          const content = await projectManager.loadScreenplay();
+          const basePath = projectManager['projectPath'] || app.getPath('documents');
+          const exportPath = path.join(basePath, `screenplay.${format}`);
+          if (format === 'pdf') {
+            const { PDFExporter } = require('../export/pdf-exporter');
+            await PDFExporter.export(content, exportPath);
+          } else if (format === 'fdx') {
+            const { FDXExporter } = require('../export/fdx-exporter');
+            await FDXExporter.export(content, exportPath);
+          }
+        }
+      },
+      notifyUpdate: () => {
+        mainWindow?.webContents.send('data:update');
+      }
+    };
+    aiClient = new AIClient(apiKey, dbManager, systemActions);
+    console.log('[Main] AI client initialized');
+  } else {
+    console.log('[Main] No valid API key. AI features disabled.');
+  }
+
+  const project = {
+    id: Date.now().toString(),
+    name,
+    path: projectPath,
+    lastOpened: Date.now(),
+    createdAt: Date.now(),
+  };
+
+  // Save to recent projects
+  const recent = (store.get('recentProjects', []) as string[]);
+  recent.unshift(projectPath);
+  store.set('recentProjects', recent.slice(0, 10));
+
+  return project;
+});
+
+ipcMain.handle('project:open', async (_, projectPath: string) => {
+  if (!fs.existsSync(projectPath)) {
+    throw new Error('Project not found');
+  }
+
+  projectManager = new ProjectManager(projectPath);
+
+  const dbPath = path.join(projectPath, '.screenplay-ai', 'project.db');
+  dbManager = new DatabaseManager(dbPath);
+
+  // Decrypt and use stored API key
+  const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;
+  let apiKey = '';
+
+  if (encryptedKey && safeStorage.isEncryptionAvailable()) {
+    try {
+      const buffer = Buffer.from(encryptedKey, 'base64');
+      apiKey = safeStorage.decryptString(buffer);
+    } catch (error) {
+      console.error('[Main] Failed to decrypt API key:', error);
+    }
+  }
+
+  if (apiKey && apiKey.length > 20) {
+    const systemActions: SystemActions = {
+      saveScreenplay: async () => {
+        if (projectManager) {
+          const content = await projectManager.loadScreenplay();
+          await projectManager.saveScreenplay(content);
+        }
+      },
+      exportScreenplay: async (format) => {
+        if (projectManager) {
+          const content = await projectManager.loadScreenplay();
+          const basePath = projectManager['projectPath'] || app.getPath('documents');
+          const exportPath = path.join(basePath, `screenplay.${format}`);
+          if (format === 'pdf') {
+            const { PDFExporter } = require('../export/pdf-exporter');
+            await PDFExporter.export(content, exportPath);
+          } else if (format === 'fdx') {
+            const { FDXExporter } = require('../export/fdx-exporter');
+            await FDXExporter.export(content, exportPath);
+          }
+        }
+      },
+      notifyUpdate: () => {
+        mainWindow?.webContents.send('data:update');
+      }
+    };
+    aiClient = new AIClient(apiKey, dbManager, systemActions);
+    console.log('[Main] AI client initialized');
+  } else {
+    console.log('[Main] No valid API key. AI features disabled.');
+  }
+
+  const name = path.basename(projectPath);
+  const project = {
+    id: Date.now().toString(),
+    name,
+    path: projectPath,
+    lastOpened: Date.now(),
+    createdAt: Date.now(),
+  };
+
+  // Update recent projects
+  const recent = (store.get('recentProjects', []) as string[]);
+  const filtered = recent.filter(p => p !== projectPath);
+  filtered.unshift(projectPath);
+  store.set('recentProjects', filtered.slice(0, 10));
+
+  return project;
+});
+
+ipcMain.handle('project:close', async () => {
+  projectManager = null;
+  dbManager = null;
+  aiClient = null;
+});
+
+ipcMain.handle('project:save', async (_, content: string) => {
+  if (!projectManager) throw new Error('No project open');
+  await projectManager.saveScreenplay(content);
+
+  // Parse and update database
+  if (dbManager) {
+    const parsed = FountainParser.parse(content);
+    for (const scene of parsed.scenes) {
+      await dbManager.saveScene(scene);
+    }
+  }
+});
+
+ipcMain.handle('project:load', async () => {
+  if (!projectManager) throw new Error('No project open');
+  return await projectManager.loadScreenplay();
+});
+
+// Database Operations
+ipcMain.handle('db:getCharacters', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getCharacters();
+});
+
+ipcMain.handle('db:getCharacter', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getCharacter(id);
+});
+
+ipcMain.handle('db:saveCharacter', async (_, character: any) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.saveCharacter(character);
+});
+
+ipcMain.handle('db:deleteCharacter', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.deleteCharacter(id);
+});
+
+ipcMain.handle('db:getScenes', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getScenes();
+});
+
+ipcMain.handle('db:getScene', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getScene(id);
+});
+
+ipcMain.handle('db:saveScene', async (_, scene: any) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.saveScene(scene);
+});
+
+ipcMain.handle('db:deleteScene', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.deleteScene(id);
+});
+
+ipcMain.handle('db:getStoryline', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getStoryline();
+});
+
+ipcMain.handle('db:saveStoryline', async (_, storyline: any) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.saveStoryline(storyline);
+});
+
+ipcMain.handle('db:getAIHistory', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getAIHistory();
+});
+
+ipcMain.handle('db:saveAIMessage', async (_, message: any) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.saveAIMessage(message);
+});
+
+ipcMain.handle('db:clearDatabase', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.clearDatabase();
+});
+
+// AI Operations
+ipcMain.handle('ai:chat', async (_, message: string, context: any) => {
+  if (!aiClient) throw new Error('AI client not initialized');
+  return await aiClient.chat(message, context);
+});
+
+ipcMain.handle('ai:generateDialogue', async (_, character: string, context: string) => {
+  if (!aiClient) throw new Error('AI client not initialized');
+  return await aiClient.generateDialogue(character, context);
+});
+
+ipcMain.handle('ai:expandScene', async (_, outline: string) => {
+  if (!aiClient) throw new Error('AI client not initialized');
+  return await aiClient.expandScene(outline);
+});
+
+ipcMain.handle('ai:analyzeStoryline', async () => {
+  if (!aiClient) throw new Error('AI client not initialized');
+  return await aiClient.analyzeStoryline();
+});
+
+// Settings
+ipcMain.handle('settings:getGlobal', async () => {
+  const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;
+  let decryptedKey = '';
+
+  if (encryptedKey && safeStorage.isEncryptionAvailable()) {
+    try {
+      const buffer = Buffer.from(encryptedKey, 'base64');
+      decryptedKey = safeStorage.decryptString(buffer);
+    } catch (error) {
+      console.error('[Main] Failed to decrypt API key:', error);
+    }
+  }
+
+  return {
+    openaiApiKey: decryptedKey,
+    defaultTheme: store.get('defaultTheme', 'dark') as 'light' | 'dark',
+    recentProjects: store.get('recentProjects', []) as string[],
+    defaultExportFormat: store.get('defaultExportFormat', 'pdf') as 'pdf' | 'fdx' | 'fountain',
+  };
+});
+
+ipcMain.handle('settings:setGlobal', async (_, settings: any) => {
+  // Encrypt API key before storing
+  if (settings.openaiApiKey !== undefined) {
+    if (settings.openaiApiKey && safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(settings.openaiApiKey);
+      const base64 = encrypted.toString('base64');
+      store.set('openaiApiKey_encrypted', base64);
+      console.log('[Main] API key encrypted and stored');
+    } else {
+      store.delete('openaiApiKey_encrypted');
+      console.log('[Main] API key cleared');
+    }
+    delete settings.openaiApiKey; // Don't store plain text
+  }
+
+  // Store other settings
+  for (const [key, value] of Object.entries(settings)) {
+    store.set(key, value);
+  }
+
+  // Reinitialize AI client with decrypted key
+  const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;
+  if (encryptedKey && dbManager && safeStorage.isEncryptionAvailable()) {
+    try {
+      const buffer = Buffer.from(encryptedKey, 'base64');
+      const decryptedKey = safeStorage.decryptString(buffer);
+      if (decryptedKey.length > 20) {
+        // Re-create system actions for re-init
+        const systemActions: SystemActions = {
+          saveScreenplay: async () => {
+            if (projectManager) {
+              const content = await projectManager.loadScreenplay();
+              await projectManager.saveScreenplay(content);
+            }
+          },
+          exportScreenplay: async (format) => {
+            if (projectManager) {
+              const content = await projectManager.loadScreenplay();
+              // Use project path if available, otherwise default to docs
+              const basePath = projectManager['projectPath'] || app.getPath('documents');
+              const exportPath = path.join(basePath, `screenplay.${format}`);
+              if (format === 'pdf') {
+                const { PDFExporter } = require('../export/pdf-exporter');
+                await PDFExporter.export(content, exportPath);
+              } else if (format === 'fdx') {
+                const { FDXExporter } = require('../export/fdx-exporter');
+                await FDXExporter.export(content, exportPath);
+              }
+            }
+          },
+          notifyUpdate: () => {
+            mainWindow?.webContents.send('data:update');
+          }
+        };
+        aiClient = new AIClient(decryptedKey, dbManager, systemActions);
+        console.log('[Main] AI client reinitialized with decrypted key');
+      }
+    } catch (error) {
+      console.error('[Main] Failed to decrypt API key:', error);
+    }
+  }
+});
+
+ipcMain.handle('settings:getProject', async () => {
+  if (!projectManager) throw new Error('No project open');
+  return await projectManager.getSettings();
+});
+
+ipcMain.handle('settings:setProject', async (_, settings: any) => {
+  if (!projectManager) throw new Error('No project open');
+  return await projectManager.saveSettings(settings);
+});
+
+// File Operations
+ipcMain.handle('file:selectFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory', 'createDirectory'],
+  });
+
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('file:exportPDF', async (_, content: string, exportPath: string) => {
+  const { PDFExporter } = require('../export/pdf-exporter');
+  await PDFExporter.export(content, exportPath);
+});
+
+ipcMain.handle('file:exportFDX', async (_, content: string, exportPath: string) => {
+  const { FDXExporter } = require('../export/fdx-exporter');
+  await FDXExporter.export(content, exportPath);
+});
+
+ipcMain.handle('file:saveDialog', async (_, defaultPath: string, filters: any[]) => {
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    defaultPath,
+    filters,
+  });
+
+  return result.canceled ? null : result.filePath;
+});
+
+// Parsing
+ipcMain.handle('parse:fountain', async (_, content: string) => {
+  return FountainParser.parse(content);
+});
+

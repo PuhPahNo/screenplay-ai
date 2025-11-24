@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* Screenplay formatting */
+.screenplay-preview {
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-size: 12pt;
+  line-height: 1.5;
+  max-width: 6in;
+  margin: 0 auto;
+  padding: 1in;
+}
+
+.scene-heading {
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-top: 2em;
+  margin-bottom: 1em;
+}
+
+.action {
+  margin-bottom: 1em;
+}
+
+.character {
+  margin-left: 2in;
+  margin-top: 1em;
+  text-transform: uppercase;
+}
+
+.dialogue {
+  margin-left: 1.5in;
+  margin-right: 1.5in;
+  margin-bottom: 1em;
+}
+
+.parenthetical {
+  margin-left: 1.8in;
+  margin-right: 2in;
+}
+
+.transition {
+  text-align: right;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  text-transform: uppercase;
+}
+

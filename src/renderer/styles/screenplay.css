@@ -1,0 +1,221 @@
+/* Screenplay Traditional Page Styles */
+
+.screenplay-container {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #e8e8e8;
+  padding: 2rem 0;
+  position: relative;
+}
+
+
+
+.screenplay-page {
+  width: 8.5in;
+  min-height: 11in;
+  background: white;
+  margin: 0 auto 2rem auto;
+  padding: 1in 1in 1in 1.5in;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #000;
+  position: relative;
+}
+
+.screenplay-page-header {
+  position: absolute;
+  top: 0.5in;
+  right: 1in;
+  font-size: 12pt;
+  color: #666;
+}
+
+.screenplay-content {
+  outline: none;
+  min-height: 9in;
+}
+
+/* Screenplay Element Styles */
+
+.screenplay-element {
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.screenplay-line {
+  margin: 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-height: 1.5em;
+}
+
+.scene-heading {
+  margin-top: 1em;
+  margin-bottom: 0;
+  font-weight: bold;
+  text-transform: uppercase;
+  page-break-after: avoid;
+}
+
+.scene-heading:first-child {
+  margin-top: 0;
+}
+
+.action {
+  margin-bottom: 0;
+  max-width: 6in;
+}
+
+.character {
+  margin-left: 2.2in;
+  margin-top: 1em;
+  margin-bottom: 0;
+  font-weight: bold;
+  text-transform: uppercase;
+  page-break-after: avoid;
+}
+
+.dialogue {
+  margin-left: 1.5in;
+  margin-right: 1.5in;
+  max-width: 3.5in;
+  margin-bottom: 0;
+}
+
+.parenthetical {
+  margin-left: 1.8in;
+  margin-bottom: 0;
+  font-style: normal;
+}
+
+.transition {
+  margin-left: 4in;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.centered {
+  text-align: center;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  text-transform: uppercase;
+}
+
+/* Page Break */
+
+.page-break {
+  height: 1px;
+  background: #ddd;
+  margin: 2em 0;
+  page-break-after: always;
+  position: relative;
+}
+
+.page-break::after {
+  content: '• • •';
+  position: absolute;
+  top: -0.6em;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 0 1em;
+  color: #999;
+  font-size: 10pt;
+}
+
+/* Dark Mode Support */
+
+.dark .screenplay-container {
+  background: #1a1a1a;
+}
+
+.dark .screenplay-page {
+  background: #2a2a2a;
+  color: #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.dark .screenplay-page-header {
+  color: #999;
+}
+
+.dark .page-break {
+  background: #444;
+}
+
+.dark .page-break::after {
+  background: #2a2a2a;
+  color: #666;
+}
+
+/* Print Styles */
+
+@media print {
+  .screenplay-container {
+    background: white;
+    padding: 0;
+  }
+
+  .screenplay-page {
+    margin: 0;
+    box-shadow: none;
+    page-break-after: always;
+  }
+
+  .screenplay-page-header {
+    color: #000;
+  }
+
+  .page-break {
+    display: none;
+  }
+}
+
+/* Selection */
+
+.screenplay-content ::selection {
+  background: #b3d4fc;
+  color: #000;
+}
+
+.dark .screenplay-content ::selection {
+  background: #4a6fa5;
+  color: #fff;
+}
+
+/* Focus State */
+
+.screenplay-content:focus {
+  outline: none;
+}
+
+/* Placeholder */
+
+.screenplay-content[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #999;
+  font-style: italic;
+}
+
+.dark .screenplay-content[data-placeholder]:empty::before {
+  color: #666;
+}
+
+/* Highlight line animation for scene navigation */
+.highlight-line {
+  background-color: rgba(59, 130, 246, 0.2);
+  transition: background-color 0.3s ease-in-out;
+}
+
+.dark .highlight-line {
+  background-color: rgba(59, 130, 246, 0.3);
+}
