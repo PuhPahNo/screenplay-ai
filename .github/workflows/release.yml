@@ -25,6 +25,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run electron:rebuild || true
+
       - name: Build Electron app (Mac)
         if: matrix.os == 'macos-latest'
         env:
