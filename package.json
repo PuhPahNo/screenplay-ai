@@ -12,9 +12,9 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && electron .\"",
     "electron:build": "vite build && electron-builder",
-    "build:mac": "tsc && vite build && electron-builder --mac --publish always",
-    "build:win": "tsc && vite build && electron-builder --win --publish always",
-    "build:linux": "tsc && vite build && electron-builder --linux --publish always",
+    "build:mac": "vite build && electron-builder --mac --publish always",
+    "build:win": "vite build && electron-builder --win --publish always",
+    "build:linux": "vite build && electron-builder --linux --publish always",
     "release": "vite build && electron-builder --mac --win --linux --publish always",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"

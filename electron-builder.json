@@ -77,7 +77,7 @@
       "deb"
     ],
     "category": "Office",
-    "icon": "build/icons"
+    "icon": "build/icon.png"
   },
   "publish": {
     "provider": "github",
