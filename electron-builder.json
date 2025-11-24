@@ -71,14 +71,6 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true
   },
-  "linux": {
-    "target": [
-      "AppImage",
-      "deb"
-    ],
-    "category": "Office",
-    "icon": "build/icon.png"
-  },
   "publish": {
     "provider": "github",
     "owner": "PuhPahNo",

@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest]
 
     steps:
       - name: Check out Git repository
@@ -24,10 +24,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Rebuild native modules (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run electron:rebuild || true
 
       - name: Build Electron app (Mac)
         if: matrix.os == 'macos-latest'
@@ -42,14 +38,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build:win
-
-      - name: Build Electron app (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEBUG: electron-builder
-        run: |
-          npm run build:linux
 
       - name: Upload artifacts (Mac)
         if: matrix.os == 'macos-latest'
@@ -69,16 +57,6 @@ jobs:
           path: |
             release/*.exe
             release/latest.yml
-
-      - name: Upload artifacts (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-installers
-          path: |
-            release/*.AppImage
-            release/*.deb
-            release/latest-linux.yml
 
   publish:
     needs: release
@@ -101,7 +79,6 @@ jobs:
           files: |
             mac-installers/*
             windows-installers/*
-            linux-installers/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
