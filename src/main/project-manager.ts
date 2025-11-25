@@ -86,7 +86,7 @@ export class ProjectManager {
     } catch (error) {
       // Return default settings if file doesn't exist
       return {
-        aiModel: 'gpt-4-turbo-preview',
+        aiModel: 'gpt-4o-mini',
         theme: 'dark',
         autoSave: true,
         characterNamingConvention: 'uppercase',

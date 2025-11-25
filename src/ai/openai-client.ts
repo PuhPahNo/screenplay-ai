@@ -173,7 +173,7 @@ export class AIClient {
       });
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages,
         tools,
         tool_choice: 'auto',
@@ -300,7 +300,7 @@ export class AIClient {
         }
 
         const secondResponse = await this.openai.chat.completions.create({
-          model: 'gpt-4-turbo-preview',
+          model: 'gpt-4o-mini',
           messages,
           temperature: 0.7,
         });
@@ -329,7 +329,7 @@ Arc: ${characterInfo.arc}
       }
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -354,7 +354,7 @@ Arc: ${characterInfo.arc}
   async expandScene(outline: string): Promise<string> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -391,7 +391,7 @@ Arc: ${characterInfo.arc}
         .join('\n\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -456,7 +456,7 @@ Respond in JSON format with this structure:
       const contextLines = lines.slice(-10).join('\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -483,7 +483,7 @@ Respond in JSON format with this structure:
       const systemPrompt = this.contextBuilder.buildSystemPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
