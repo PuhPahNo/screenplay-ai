@@ -68,6 +68,18 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
         if (char.description) {
           prompt += `Description: ${char.description}\n`;
         }
+        if (char.age) {
+          prompt += `Age: ${char.age}\n`;
+        }
+        if (char.occupation) {
+          prompt += `Occupation: ${char.occupation}\n`;
+        }
+        if (char.personality) {
+          prompt += `Personality: ${char.personality}\n`;
+        }
+        if (char.goals) {
+          prompt += `Goals: ${char.goals}\n`;
+        }
         if (char.arc) {
           prompt += `Arc: ${char.arc}\n`;
         }
@@ -80,15 +92,17 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
             prompt += `- ${relName}: ${relDesc}\n`;
           }
         }
+        if (char.notes) {
+          prompt += `Notes: ${char.notes}\n`;
+        }
         prompt += '\n';
       }
     }
 
-    // Add scenes
+    // Add scenes (send ALL scenes for complete context)
     if (context.scenes && context.scenes.length > 0) {
       prompt += '## SCENES:\n\n';
-      for (const scene of context.scenes.slice(0, 10)) {
-        // Limit to first 10 scenes to avoid token limits
+      for (const scene of context.scenes) {
         prompt += `Scene ${scene.number}: ${scene.heading}\n`;
         if (scene.summary) {
           prompt += `Summary: ${scene.summary}\n`;
@@ -98,9 +112,7 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
         }
         prompt += '\n';
       }
-      if (context.scenes.length > 10) {
-        prompt += `... and ${context.scenes.length - 10} more scenes\n\n`;
-      }
+      prompt += `Total Scenes: ${context.scenes.length}\n\n`;
     }
 
     // Add storyline
@@ -121,13 +133,15 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
       }
     }
 
-    // Add current screenplay content (limited)
+    // Add current screenplay content (expanded limit for better context)
     if (context.currentContent) {
-      const contentPreview = context.currentContent.substring(0, 2000);
+      // Increased from 2000 to 10000 chars for much better context understanding
+      const contentPreview = context.currentContent.substring(0, 10000);
       prompt += '## CURRENT SCREENPLAY EXCERPT:\n\n';
       prompt += contentPreview;
-      if (context.currentContent.length > 2000) {
-        prompt += '\n\n... (content truncated)';
+      if (context.currentContent.length > 10000) {
+        const remaining = context.currentContent.length - 10000;
+        prompt += `\n\n... (${remaining} more characters in full screenplay)`;
       }
       prompt += '\n\n';
     }

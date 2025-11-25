@@ -157,8 +157,9 @@ export class AIClient {
 
       // Add conversation history if available
       if (context.history && context.history.length > 0) {
-        // Take last 10 messages to maintain context without exceeding token limits
-        const recentHistory = context.history.slice(-10);
+        // Increased from 10 to 50 messages for much better conversation continuity
+        // GPT-5 mini's efficiency allows us to maintain longer context
+        const recentHistory = context.history.slice(-50);
         for (const msg of recentHistory) {
           messages.push({
             role: msg.role as 'user' | 'assistant',
@@ -482,20 +483,41 @@ Respond in JSON format with this structure:
     try {
       const systemPrompt = this.contextBuilder.buildSystemPrompt(context);
 
+      // Build comprehensive context for thorough consistency checking
+      const contextPrompt = this.contextBuilder.buildContextPrompt(context);
+
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
-            content: `${systemPrompt}\n\nYou are a script consultant. Check for inconsistencies in character behavior, plot logic, and continuity. Return a JSON array of issues found.`,
+            content: `${systemPrompt}\n\nYou are a script consultant performing a deep continuity and consistency check. Analyze the screenplay for:
+- Character behavior inconsistencies (actions that contradict established personality/motivation)
+- Plot logic errors (events that don't make sense or contradict earlier information)
+- Timeline/continuity issues (character locations, time of day, props, wardrobe)
+- Dialogue inconsistencies (character voice changes, contradictory statements)
+- Thematic coherence (scenes that undermine the story's themes)
+
+Return a JSON object with this structure:
+{
+  "issues": [
+    {
+      "type": "character" | "plot" | "continuity" | "dialogue" | "theme",
+      "severity": "critical" | "moderate" | "minor",
+      "description": "Clear description of the issue",
+      "location": "Scene number or character name",
+      "suggestion": "How to fix it"
+    }
+  ]
+}`,
           },
           {
             role: 'user',
-            content: `Check this screenplay for inconsistencies:\n\n${content.substring(0, 8000)}`,
+            content: `${contextPrompt}\n\nPerform a comprehensive consistency check on this screenplay:\n\n${content.substring(0, 20000)}`,
           },
         ],
         temperature: 0.3,
-        max_tokens: 1500,
+        max_tokens: 3000,
         response_format: { type: 'json_object' },
       });
 
@@ -505,6 +527,46 @@ Respond in JSON format with this structure:
       return result.issues || [];
     } catch (error) {
       console.error('Consistency check error:', error);
+      throw error;
+    }
+  }
+
+  async analyzeFullScript(): Promise<any> {
+    try {
+      const context = await this.contextBuilder.buildFullContext();
+      const systemPrompt = this.contextBuilder.buildSystemPrompt(context);
+      const contextPrompt = this.contextBuilder.buildContextPrompt(context);
+
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-5-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `${systemPrompt}\n\nYou are performing a comprehensive professional script analysis. Evaluate:
+
+1. STRUCTURE: Three-act structure, pacing, act breaks, turning points
+2. CHARACTERS: Arcs, consistency, depth, relationships
+3. DIALOGUE: Authenticity, subtext, character voice, efficiency
+4. THEMES: Clarity, integration, depth
+5. PACING: Scene length, momentum, tension/release
+6. MARKETABILITY: Genre fit, target audience, commercial appeal
+
+Return detailed JSON analysis with specific examples and actionable feedback.`,
+          },
+          {
+            role: 'user',
+            content: `${contextPrompt}\n\nProvide a comprehensive professional analysis of this screenplay.`,
+          },
+        ],
+        temperature: 0.5,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
+      });
+
+      const response = completion.choices[0]?.message?.content || '{}';
+      return JSON.parse(response);
+    } catch (error) {
+      console.error('Full script analysis error:', error);
       throw error;
     }
   }
