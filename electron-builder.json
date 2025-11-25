@@ -29,6 +29,8 @@
     ],
     "category": "public.app-category.productivity"
   },
+  "generateUpdatesFilesForAllChannels": true,
+  "differentialPackage": true,
   "dmg": {
     "contents": [
       {
@@ -70,5 +72,8 @@
     "provider": "github",
     "owner": "PuhPahNo",
     "repo": "screenplay-ai"
+  },
+  "releaseInfo": {
+    "releaseNotesFile": "CHANGELOG.md"
   }
 }
