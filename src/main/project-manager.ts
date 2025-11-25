@@ -15,7 +15,7 @@ export class ProjectManager {
 
   constructor(projectPath: string) {
     this.projectPath = projectPath;
-    
+
     // Default path
     const defaultPath = path.join(projectPath, 'screenplay.fountain');
     this.screenplayPath = defaultPath;
@@ -27,7 +27,7 @@ export class ProjectManager {
         const files = readdirSync(projectPath);
         // Find first .fountain file that isn't a hidden file
         const fountainFile = files.find(f => f.endsWith('.fountain') && !f.startsWith('.'));
-        
+
         if (fountainFile) {
           this.screenplayPath = path.join(projectPath, fountainFile);
           console.log(`[ProjectManager] Found existing screenplay: ${fountainFile}`);
@@ -86,7 +86,7 @@ export class ProjectManager {
     } catch (error) {
       // Return default settings if file doesn't exist
       return {
-        aiModel: 'gpt-4o-mini',
+        aiModel: 'gpt-5-mini',
         theme: 'dark',
         autoSave: true,
         characterNamingConvention: 'uppercase',
