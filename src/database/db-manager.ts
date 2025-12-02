@@ -112,53 +112,79 @@ export class DatabaseManager {
   }
 
   private runMigrations() {
-    // Migration 1: Add conversation_id to ai_history if it doesn't exist
-    const aiHistoryColumns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
-    const hasConversationId = aiHistoryColumns.some(col => col.name === 'conversation_id');
-    
-    if (!hasConversationId) {
-      console.log('[DB] Running migration: Adding conversation_id to ai_history');
-      this.db.exec('ALTER TABLE ai_history ADD COLUMN conversation_id TEXT');
-      
-      // Migrate existing messages to a default conversation
-      const existingMessages = this.db.prepare('SELECT id FROM ai_history WHERE conversation_id IS NULL').all();
-      if (existingMessages.length > 0) {
-        const defaultConversationId = 'conv-default-' + Date.now();
-        const now = Date.now();
-        
-        // Create default conversation
-        this.db.prepare(`
-          INSERT INTO conversations (id, title, created_at, updated_at)
-          VALUES (?, ?, ?, ?)
-        `).run(defaultConversationId, 'Previous Conversation', now, now);
-        
-        // Update all existing messages
-        this.db.prepare('UPDATE ai_history SET conversation_id = ? WHERE conversation_id IS NULL')
-          .run(defaultConversationId);
-        
-        console.log(`[DB] Migrated ${existingMessages.length} messages to default conversation`);
+    try {
+      // First, ensure conversations table exists (for older databases)
+      const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'").all();
+      if (tables.length === 0) {
+        console.log('[DB] Running migration: Creating conversations table');
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            context_summary TEXT,
+            total_tokens_used INTEGER DEFAULT 0
+          )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at)');
       }
-    }
 
-    // Migration 2: Add token_usage to ai_history if it doesn't exist
-    const hasTokenUsage = aiHistoryColumns.some(col => col.name === 'token_usage');
-    if (!hasTokenUsage) {
-      console.log('[DB] Running migration: Adding token_usage to ai_history');
-      this.db.exec('ALTER TABLE ai_history ADD COLUMN token_usage TEXT');
-    }
+      // Migration 1: Add conversation_id to ai_history if it doesn't exist
+      const aiHistoryColumns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
+      const hasConversationId = aiHistoryColumns.some((col: any) => col.name === 'conversation_id');
+      
+      if (!hasConversationId) {
+        console.log('[DB] Running migration: Adding conversation_id to ai_history');
+        this.db.exec('ALTER TABLE ai_history ADD COLUMN conversation_id TEXT');
+        
+        // Migrate existing messages to a default conversation
+        const existingMessages = this.db.prepare('SELECT id FROM ai_history').all();
+        if (existingMessages.length > 0) {
+          const defaultConversationId = 'conv-default-' + Date.now();
+          const now = Date.now();
+          
+          // Create default conversation
+          this.db.prepare(`
+            INSERT INTO conversations (id, title, created_at, updated_at, total_tokens_used)
+            VALUES (?, ?, ?, ?, ?)
+          `).run(defaultConversationId, 'Previous Conversation', now, now, 0);
+          
+          // Update all existing messages
+          this.db.prepare('UPDATE ai_history SET conversation_id = ?')
+            .run(defaultConversationId);
+          
+          console.log(`[DB] Migrated ${existingMessages.length} messages to default conversation`);
+        }
+      }
 
-    // Migration 3: Add context_summary and total_tokens_used to conversations
-    const convColumns = this.db.prepare("PRAGMA table_info(conversations)").all() as any[];
-    const hasContextSummary = convColumns.some(col => col.name === 'context_summary');
-    const hasTotalTokens = convColumns.some(col => col.name === 'total_tokens_used');
-    
-    if (!hasContextSummary) {
-      console.log('[DB] Running migration: Adding context_summary to conversations');
-      this.db.exec('ALTER TABLE conversations ADD COLUMN context_summary TEXT');
-    }
-    if (!hasTotalTokens) {
-      console.log('[DB] Running migration: Adding total_tokens_used to conversations');
-      this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
+      // Migration 2: Add token_usage to ai_history if it doesn't exist
+      // Re-fetch columns after potential ALTER
+      const updatedAiHistoryColumns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
+      const hasTokenUsage = updatedAiHistoryColumns.some((col: any) => col.name === 'token_usage');
+      if (!hasTokenUsage) {
+        console.log('[DB] Running migration: Adding token_usage to ai_history');
+        this.db.exec('ALTER TABLE ai_history ADD COLUMN token_usage TEXT');
+      }
+
+      // Migration 3: Add context_summary and total_tokens_used to conversations
+      const convColumns = this.db.prepare("PRAGMA table_info(conversations)").all() as any[];
+      const hasContextSummary = convColumns.some((col: any) => col.name === 'context_summary');
+      const hasTotalTokens = convColumns.some((col: any) => col.name === 'total_tokens_used');
+      
+      if (!hasContextSummary) {
+        console.log('[DB] Running migration: Adding context_summary to conversations');
+        this.db.exec('ALTER TABLE conversations ADD COLUMN context_summary TEXT');
+      }
+      if (!hasTotalTokens) {
+        console.log('[DB] Running migration: Adding total_tokens_used to conversations');
+        this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
+      }
+      
+      console.log('[DB] Migrations completed successfully');
+    } catch (error) {
+      console.error('[DB] Migration error:', error);
+      throw error;
     }
   }
 
