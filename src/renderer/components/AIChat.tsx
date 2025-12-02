@@ -3,9 +3,17 @@ import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '../store/app-store';
 import { 
   Bot, X, Send, Plus, Trash2, MessageSquare, 
-  ChevronLeft, ChevronRight, Loader2 
+  ChevronLeft, ChevronRight, Loader2, BarChart3 
 } from 'lucide-react';
-import type { Conversation } from '../../shared/types';
+import type { Conversation, TokenUsage } from '../../shared/types';
+
+// Helper to format token counts (e.g., 1234 -> "1.2k")
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return (tokens / 1000).toFixed(1) + 'k';
+  }
+  return tokens.toString();
+}
 
 // Helper to format relative time
 function formatRelativeTime(timestamp: number): string {
@@ -207,8 +215,14 @@ export default function AIChat() {
                           }`}>
                             {conv.title}
                           </div>
-                          <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                            {formatRelativeTime(conv.updatedAt)}
+                          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                            <span>{formatRelativeTime(conv.updatedAt)}</span>
+                            {conv.totalTokensUsed && conv.totalTokensUsed > 0 && (
+                              <>
+                                <span>·</span>
+                                <span>{formatTokens(conv.totalTokensUsed)}</span>
+                              </>
+                            )}
                           </div>
                         </button>
 
@@ -335,10 +349,15 @@ export default function AIChat() {
                     }`}>
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
-                    {msg.contextUsed && (
-                      <div className="mt-2 pt-2 border-t border-white/20 text-xs opacity-70">
-                        Context: {msg.contextUsed.characters.length} characters,{' '}
-                        {msg.contextUsed.scenes.length} scenes
+                    {/* Token usage for AI responses */}
+                    {msg.role === 'assistant' && msg.tokenUsage && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+                        <BarChart3 className="w-3 h-3" />
+                        <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
+                        <span>·</span>
+                        <span>{formatTokens(msg.tokenUsage.completionTokens)} out</span>
+                        <span>·</span>
+                        <span>{formatTokens(msg.tokenUsage.totalTokens)} total</span>
                       </div>
                     )}
                   </div>

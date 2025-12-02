@@ -1,8 +1,13 @@
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
-import type { AIContext, Storyline, SystemActions } from '../shared/types';
+import type { AIContext, Storyline, SystemActions, TokenUsage } from '../shared/types';
 import type { DatabaseManager } from '../database/db-manager';
 import { ContextBuilder } from './context-builder';
+
+export interface ChatResponse {
+  content: string;
+  tokenUsage: TokenUsage;
+}
 
 export class AIClient {
   private openai: OpenAI;
@@ -17,10 +22,14 @@ export class AIClient {
     this.systemActions = systemActions;
   }
 
-  async chat(message: string, context: AIContext): Promise<string> {
+  async chat(message: string, context: AIContext): Promise<ChatResponse> {
     try {
       const systemPrompt = this.contextBuilder.buildSystemPrompt(context);
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
+      
+      // Track token usage across all API calls
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
 
       const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         {
@@ -255,6 +264,12 @@ export class AIClient {
         temperature: 0.7,
         max_completion_tokens: 4000,
       });
+
+      // Track token usage from first completion
+      if (completion.usage) {
+        totalPromptTokens += completion.usage.prompt_tokens;
+        totalCompletionTokens += completion.usage.completion_tokens;
+      }
 
       const responseMessage = completion.choices[0]?.message;
 
@@ -505,10 +520,30 @@ export class AIClient {
           temperature: 0.7,
         });
 
-        return secondResponse.choices[0]?.message?.content || 'Action completed.';
+        // Track token usage from second completion (after tool calls)
+        if (secondResponse.usage) {
+          totalPromptTokens += secondResponse.usage.prompt_tokens;
+          totalCompletionTokens += secondResponse.usage.completion_tokens;
+        }
+
+        return {
+          content: secondResponse.choices[0]?.message?.content || 'Action completed.',
+          tokenUsage: {
+            promptTokens: totalPromptTokens,
+            completionTokens: totalCompletionTokens,
+            totalTokens: totalPromptTokens + totalCompletionTokens,
+          },
+        };
       }
 
-      return responseMessage?.content || 'No response generated.';
+      return {
+        content: responseMessage?.content || 'No response generated.',
+        tokenUsage: {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+        },
+      };
     } catch (error) {
       console.error('OpenAI API error:', error);
       throw new Error('Failed to get AI response: ' + error);

@@ -60,6 +60,23 @@ export interface PlotPoint {
   timestamp: number;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface ChatResponse {
+  content: string;
+  tokenUsage: TokenUsage;
+}
+
+export interface SummarizationResult {
+  summary: string;
+  originalMessageCount: number;
+  preservedMessageCount: number;
+}
+
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -67,6 +84,7 @@ export interface AIMessage {
   timestamp: number;
   contextUsed?: AIContext;
   conversationId?: string;
+  tokenUsage?: TokenUsage;
 }
 
 export interface Conversation {
@@ -74,6 +92,8 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  contextSummary?: string;
+  totalTokensUsed?: number;
 }
 
 export interface AIContext {
@@ -82,6 +102,7 @@ export interface AIContext {
   storyline?: Storyline;
   currentContent: string;
   history?: AIMessage[];
+  conversationSummary?: string;
 }
 
 export interface PendingEdit {
@@ -144,7 +165,7 @@ export interface IpcChannels {
   'db:deleteConversation': (id: string) => Promise<void>;
 
   // AI Operations
-  'ai:chat': (message: string, context: AIContext) => Promise<string>;
+  'ai:chat': (message: string, context: AIContext) => Promise<ChatResponse>;
   'ai:generateDialogue': (character: string, context: string) => Promise<string>;
   'ai:expandScene': (outline: string) => Promise<string>;
   'ai:analyzeStoryline': () => Promise<any>;
@@ -201,16 +222,19 @@ export interface WindowAPI {
     
     // Conversation methods
     getConversations: () => Promise<Conversation[]>;
+    getConversation: (id: string) => Promise<Conversation | null>;
     createConversation: (title: string) => Promise<Conversation>;
     updateConversation: (id: string, title: string) => Promise<void>;
     deleteConversation: (id: string) => Promise<void>;
+    saveConversationSummary: (id: string, summary: string) => Promise<void>;
   };
 
   ai: {
-    chat: (message: string, context: AIContext) => Promise<string>;
+    chat: (message: string, context: AIContext) => Promise<ChatResponse>;
     generateDialogue: (character: string, context: string) => Promise<string>;
     expandScene: (outline: string) => Promise<string>;
     analyzeStoryline: () => Promise<any>;
+    summarizeConversation: (conversationId: string) => Promise<SummarizationResult>;
   };
 
   settings: {

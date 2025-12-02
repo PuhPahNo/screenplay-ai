@@ -590,6 +590,35 @@ ipcMain.handle('ai:analyzeStoryline', async () => {
   return await aiClient.analyzeStoryline();
 });
 
+// Get single conversation
+ipcMain.handle('db:getConversation', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getConversation(id);
+});
+
+// Save conversation summary
+ipcMain.handle('db:saveConversationSummary', async (_, id: string, summary: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.saveConversationSummary(id, summary);
+});
+
+// Summarize conversation
+ipcMain.handle('ai:summarizeConversation', async (_, conversationId: string) => {
+  if (!dbManager) throw new Error('No database open');
+  if (!globalSettings?.openaiApiKey) throw new Error('OpenAI API key not configured');
+  
+  const { ContextSummarizer } = await import('../ai/context-summarizer');
+  const summarizer = new ContextSummarizer(globalSettings.openaiApiKey);
+  
+  const messages = await dbManager.getAIHistoryForConversation(conversationId);
+  const result = await summarizer.summarize(messages);
+  
+  // Save the summary to the conversation
+  await dbManager.saveConversationSummary(conversationId, result.summary);
+  
+  return result;
+});
+
 // Settings
 ipcMain.handle('settings:getGlobal', async () => {
   const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;

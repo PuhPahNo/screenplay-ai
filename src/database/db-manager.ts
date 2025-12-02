@@ -64,17 +64,20 @@ CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  context_summary TEXT,
+  total_tokens_used INTEGER DEFAULT 0
 );
 
--- AI History table (with conversation_id)
+-- AI History table (with conversation_id and token_usage)
 CREATE TABLE IF NOT EXISTS ai_history (
   id TEXT PRIMARY KEY,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   timestamp INTEGER NOT NULL,
   context_used TEXT,
-  conversation_id TEXT REFERENCES conversations(id)
+  conversation_id TEXT REFERENCES conversations(id),
+  token_usage TEXT
 );
 
 -- Indexes
@@ -110,8 +113,8 @@ export class DatabaseManager {
 
   private runMigrations() {
     // Migration 1: Add conversation_id to ai_history if it doesn't exist
-    const columns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
-    const hasConversationId = columns.some(col => col.name === 'conversation_id');
+    const aiHistoryColumns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
+    const hasConversationId = aiHistoryColumns.some(col => col.name === 'conversation_id');
     
     if (!hasConversationId) {
       console.log('[DB] Running migration: Adding conversation_id to ai_history');
@@ -135,6 +138,27 @@ export class DatabaseManager {
         
         console.log(`[DB] Migrated ${existingMessages.length} messages to default conversation`);
       }
+    }
+
+    // Migration 2: Add token_usage to ai_history if it doesn't exist
+    const hasTokenUsage = aiHistoryColumns.some(col => col.name === 'token_usage');
+    if (!hasTokenUsage) {
+      console.log('[DB] Running migration: Adding token_usage to ai_history');
+      this.db.exec('ALTER TABLE ai_history ADD COLUMN token_usage TEXT');
+    }
+
+    // Migration 3: Add context_summary and total_tokens_used to conversations
+    const convColumns = this.db.prepare("PRAGMA table_info(conversations)").all() as any[];
+    const hasContextSummary = convColumns.some(col => col.name === 'context_summary');
+    const hasTotalTokens = convColumns.some(col => col.name === 'total_tokens_used');
+    
+    if (!hasContextSummary) {
+      console.log('[DB] Running migration: Adding context_summary to conversations');
+      this.db.exec('ALTER TABLE conversations ADD COLUMN context_summary TEXT');
+    }
+    if (!hasTotalTokens) {
+      console.log('[DB] Running migration: Adding total_tokens_used to conversations');
+      this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
     }
   }
 
@@ -334,6 +358,8 @@ export class DatabaseManager {
       title: row.title,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      contextSummary: row.context_summary || undefined,
+      totalTokensUsed: row.total_tokens_used || 0,
     }));
   }
 
@@ -377,6 +403,7 @@ export class DatabaseManager {
       timestamp: row.timestamp,
       contextUsed: row.context_used ? JSON.parse(row.context_used) : undefined,
       conversationId: row.conversation_id || undefined,
+      tokenUsage: row.token_usage ? JSON.parse(row.token_usage) : undefined,
     }));
   }
 
@@ -392,13 +419,14 @@ export class DatabaseManager {
       timestamp: row.timestamp,
       contextUsed: row.context_used ? JSON.parse(row.context_used) : undefined,
       conversationId: row.conversation_id,
+      tokenUsage: row.token_usage ? JSON.parse(row.token_usage) : undefined,
     }));
   }
 
   async saveAIMessage(message: AIMessage): Promise<void> {
     const stmt = this.db.prepare(`
-      INSERT INTO ai_history (id, role, content, timestamp, context_used, conversation_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_history (id, role, content, timestamp, context_used, conversation_id, token_usage)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     
     stmt.run(
@@ -407,13 +435,44 @@ export class DatabaseManager {
       message.content,
       message.timestamp,
       message.contextUsed ? JSON.stringify(message.contextUsed) : null,
-      message.conversationId || null
+      message.conversationId || null,
+      message.tokenUsage ? JSON.stringify(message.tokenUsage) : null
     );
     
-    // Update conversation timestamp
+    // Update conversation timestamp and token count
     if (message.conversationId) {
       this.updateConversationTimestamp(message.conversationId);
+      if (message.tokenUsage) {
+        this.updateConversationTokens(message.conversationId, message.tokenUsage.totalTokens);
+      }
     }
+  }
+
+  async updateConversationTokens(id: string, tokens: number): Promise<void> {
+    this.db.prepare(`
+      UPDATE conversations SET total_tokens_used = total_tokens_used + ? WHERE id = ?
+    `).run(tokens, id);
+  }
+
+  async saveConversationSummary(id: string, summary: string): Promise<void> {
+    this.db.prepare(`
+      UPDATE conversations SET context_summary = ?, updated_at = ? WHERE id = ?
+    `).run(summary, Date.now(), id);
+  }
+
+  async getConversation(id: string): Promise<Conversation | null> {
+    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as any;
+    
+    if (!row) return null;
+    
+    return {
+      id: row.id,
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      contextSummary: row.context_summary || undefined,
+      totalTokensUsed: row.total_tokens_used || 0,
+    };
   }
 
   // AI Memory operations

@@ -76,7 +76,17 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
   }
 
   buildContextPrompt(context: AIContext): string {
-    let prompt = '=== CURRENT PROJECT CONTEXT ===\n\n';
+    let prompt = '';
+
+    // Include conversation summary if present (from previous context compression)
+    if (context.conversationSummary) {
+      prompt += '=== PREVIOUS CONVERSATION SUMMARY ===\n';
+      prompt += '(This summarizes earlier parts of our conversation. Continue from where we left off.)\n\n';
+      prompt += context.conversationSummary;
+      prompt += '\n\n=== END SUMMARY ===\n\n';
+    }
+
+    prompt += '=== CURRENT PROJECT CONTEXT ===\n\n';
 
     // Add characters
     if (context.characters && context.characters.length > 0) {

@@ -173,6 +173,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadScenes();
       await get().loadStoryline();
       await get().loadProjectSettings();
+      
+      // New project starts with empty conversations
+      await get().loadConversations();
+      set({ currentConversationId: null, aiHistory: [] });
     } catch (error) {
       console.error('Failed to create project:', error);
       throw error;
@@ -188,6 +192,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadScenes();
       await get().loadStoryline();
       await get().loadProjectSettings();
+      
+      // Load project-specific conversations and reset selection
+      await get().loadConversations();
+      set({ currentConversationId: null, aiHistory: [] });
 
       // Check if project has content but no extracted data
       const { characters, scenes, screenplayContent } = get();
@@ -385,12 +393,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         conversationId = newConversation.id;
       }
 
+      // Get current conversation to check for existing summary
+      const conversation = await window.api.db.getConversation(conversationId);
+
       const context: AIContext = {
         characters,
         scenes,
         storyline: storyline || undefined,
         currentContent: screenplayContent,
         history: get().aiHistory,
+        conversationSummary: conversation?.contextSummary,
       };
 
       const userMessage: AIMessage = {
@@ -408,10 +420,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const assistantMessage: AIMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response,
+        content: response.content,
         timestamp: Date.now(),
         contextUsed: context,
         conversationId,
+        tokenUsage: response.tokenUsage,
       };
 
       await window.api.db.saveAIMessage(assistantMessage);
@@ -421,7 +434,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ aiHistory: history });
 
       // Update conversation title if it's the first message
-      const conversations = get().conversations;
+      let conversations = get().conversations;
       const currentConv = conversations.find(c => c.id === conversationId);
       if (currentConv && currentConv.title === 'New Chat') {
         // Auto-generate title from first message (truncate to 30 chars)
@@ -429,8 +442,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().updateConversationTitle(conversationId, autoTitle);
       }
 
-      // Reload conversations to update timestamps
+      // Reload conversations to update timestamps and token counts
       await get().loadConversations();
+      
+      // Check if summarization is needed (threshold: 180k tokens)
+      // Get updated conversation with new token count
+      const updatedConv = await window.api.db.getConversation(conversationId);
+      if (updatedConv && updatedConv.totalTokensUsed && updatedConv.totalTokensUsed > 180000) {
+        // Check if there's no pending edit before summarizing
+        const { pendingEdit } = get();
+        if (!pendingEdit) {
+          console.log('[Store] Token threshold exceeded, summarizing conversation...');
+          try {
+            await window.api.ai.summarizeConversation(conversationId);
+            console.log('[Store] Conversation summarized successfully');
+            await get().loadConversations();
+          } catch (error) {
+            console.error('[Store] Failed to summarize conversation:', error);
+            // Non-fatal error - continue without summarizing
+          }
+        } else {
+          console.log('[Store] Skipping summarization - pending edit awaiting approval');
+        }
+      }
     } catch (error) {
       console.error('Failed to send AI message:', error);
       throw error;

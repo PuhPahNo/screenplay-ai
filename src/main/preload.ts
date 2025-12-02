@@ -29,10 +29,13 @@ const api: WindowAPI = {
     
     // Conversation methods
     getConversations: () => ipcRenderer.invoke('db:getConversations'),
+    getConversation: (id: string) => ipcRenderer.invoke('db:getConversation', id),
     createConversation: (title: string) => ipcRenderer.invoke('db:createConversation', title),
     updateConversation: (id: string, title: string) => 
       ipcRenderer.invoke('db:updateConversation', id, title),
     deleteConversation: (id: string) => ipcRenderer.invoke('db:deleteConversation', id),
+    saveConversationSummary: (id: string, summary: string) =>
+      ipcRenderer.invoke('db:saveConversationSummary', id, summary),
   },
   
   ai: {
@@ -41,6 +44,8 @@ const api: WindowAPI = {
       ipcRenderer.invoke('ai:generateDialogue', character, context),
     expandScene: (outline: string) => ipcRenderer.invoke('ai:expandScene', outline),
     analyzeStoryline: () => ipcRenderer.invoke('ai:analyzeStoryline'),
+    summarizeConversation: (conversationId: string) => 
+      ipcRenderer.invoke('ai:summarizeConversation', conversationId),
   },
   
   settings: {
