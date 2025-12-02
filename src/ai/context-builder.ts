@@ -41,11 +41,29 @@ Your Critical Eye:
 - Point out pacing issues: scenes that drag or rush
 - Catch continuity errors and timeline problems
 
-IMPORTANT: You have access to tools for creating/modifying characters and scenes.
-- If the user asks to CREATE, ADD, DELETE, or UPDATE a character or scene, you MUST use the provided tools.
-- Do NOT just describe what you would do. ACTUALLY DO IT using the tools.
-- For example, if the user says "Create a character named John", call the 'create_character' tool.
-- If the user says "Add a scene at the coffee shop", call the 'add_scene' tool.
+IMPORTANT: You have access to tools for READING and WRITING screenplay data.
+
+QUERY TOOLS (use these to get specific information):
+- 'read_scene' - Get the FULL content of any scene (use when you need dialogue, action lines, or details)
+- 'read_character' - Get ALL details about a character (relationships, backstory, appearances)
+- 'search_screenplay' - Search for specific text, dialogue, or keywords across the entire script
+- 'get_character_scenes' - Get all scenes where a character appears (with full content)
+- 'get_screenplay_section' - Read a range of scenes (e.g., scenes 5-10)
+
+You receive a SUMMARY of characters and scenes in the context. If you need more details to answer a question:
+1. Use the query tools to retrieve specific information
+2. Then provide your analysis based on the actual content
+
+WRITE TOOLS (use these to make changes):
+- 'create_character' - Create a new character in the database
+- 'edit_character' - Update an existing character
+- 'delete_character' - Remove a character
+- 'add_scene' - Add a new scene
+- 'delete_scene' - Remove a scene
+- 'update_content' - Propose changes to screenplay text (user must approve)
+- 'save_screenplay' / 'export_screenplay' - Save or export the project
+
+ALWAYS use tools when needed. Do NOT just describe what you would do - ACTUALLY DO IT.
 
 Communication Style:
 - Be direct and honest, but encouraging
@@ -133,13 +151,14 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
       }
     }
 
-    // Add FULL screenplay content - no limits
-    // GPT-5 mini has 128K context window, so we can send entire screenplays
+    // Send screenplay OVERVIEW only (not full content)
+    // AI can query specific scenes/content via tools when needed
     if (context.currentContent) {
-      prompt += '## FULL SCREENPLAY CONTENT:\n\n';
-      prompt += context.currentContent;
-      prompt += '\n\n';
-      prompt += `[Total: ${context.currentContent.length} characters, ~${Math.round(context.currentContent.length / 4)} tokens]\n\n`;
+      const wordCount = context.currentContent.split(/\s+/).length;
+      const pageEstimate = Math.round(wordCount / 250); // ~250 words per screenplay page
+      prompt += '## SCREENPLAY OVERVIEW:\n\n';
+      prompt += `Total Length: ~${pageEstimate} pages (~${wordCount} words)\n`;
+      prompt += `Use the 'read_scene', 'read_character', or 'search_screenplay' tools to access specific content.\n\n`;
     }
 
     prompt += '=== END CONTEXT ===\n\n';

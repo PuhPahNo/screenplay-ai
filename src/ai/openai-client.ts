@@ -145,6 +145,80 @@ export class AIClient {
               required: ['original_text', 'new_text', 'description']
             }
           }
+        },
+        // === QUERY TOOLS (Read-only access to screenplay data) ===
+        {
+          type: 'function',
+          function: {
+            name: 'read_scene',
+            description: 'Read the FULL content of a specific scene. Use this to analyze dialogue, action lines, or specific scene details. You can identify scenes from the scene list in the context.',
+            parameters: {
+              type: 'object',
+              properties: {
+                scene_id: { type: 'string', description: 'The ID of the scene to read' },
+                scene_number: { type: 'number', description: 'Alternatively, the scene number (1, 2, 3, etc.)' }
+              },
+              required: []
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'read_character',
+            description: 'Read ALL details about a specific character including relationships, appearances, backstory, and notes.',
+            parameters: {
+              type: 'object',
+              properties: {
+                character_id: { type: 'string', description: 'The ID of the character' },
+                character_name: { type: 'string', description: 'Alternatively, the character name (case-insensitive)' }
+              },
+              required: []
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'search_screenplay',
+            description: 'Search the entire screenplay for specific text, dialogue, or keywords. Returns matching scenes with context.',
+            parameters: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'The text to search for (case-insensitive)' }
+              },
+              required: ['query']
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'get_character_scenes',
+            description: 'Get all scenes where a specific character appears, with full scene content.',
+            parameters: {
+              type: 'object',
+              properties: {
+                character_name: { type: 'string', description: 'The character name to find scenes for' }
+              },
+              required: ['character_name']
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'get_screenplay_section',
+            description: 'Read a section of the screenplay by page range or scene range.',
+            parameters: {
+              type: 'object',
+              properties: {
+                start_scene: { type: 'number', description: 'Starting scene number' },
+                end_scene: { type: 'number', description: 'Ending scene number' }
+              },
+              required: ['start_scene', 'end_scene']
+            }
+          }
         }
       ];
 
@@ -285,6 +359,131 @@ export class AIClient {
                   result = `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
                 } else {
                   result = 'Content update functionality not available.';
+                }
+                break;
+
+              // === QUERY TOOLS (Read-only) ===
+              case 'read_scene':
+                const scenes = await this.dbManager.getScenes();
+                let targetScene = null;
+                
+                if (args.scene_id) {
+                  targetScene = await this.dbManager.getScene(args.scene_id);
+                } else if (args.scene_number) {
+                  targetScene = scenes.find(s => s.number === args.scene_number);
+                }
+                
+                if (targetScene) {
+                  result = `=== SCENE ${targetScene.number}: ${targetScene.heading} ===\n\n`;
+                  result += `Summary: ${targetScene.summary || 'No summary'}\n`;
+                  result += `Characters: ${targetScene.characters.join(', ') || 'None listed'}\n\n`;
+                  result += `--- FULL CONTENT ---\n${targetScene.content || '[Scene content not yet written]'}`;
+                } else {
+                  result = `Scene not found. Available scenes: ${scenes.map(s => `${s.number}: ${s.heading}`).join(', ')}`;
+                }
+                break;
+
+              case 'read_character':
+                const allCharacters = await this.dbManager.getCharacters();
+                let targetChar = null;
+                
+                if (args.character_id) {
+                  targetChar = await this.dbManager.getCharacter(args.character_id);
+                } else if (args.character_name) {
+                  targetChar = allCharacters.find(c => 
+                    c.name.toLowerCase() === args.character_name.toLowerCase() ||
+                    c.id.toLowerCase() === args.character_name.toLowerCase()
+                  );
+                }
+                
+                if (targetChar) {
+                  result = `=== CHARACTER: ${targetChar.name} ===\n\n`;
+                  result += `Description: ${targetChar.description || 'None'}\n`;
+                  result += `Age: ${targetChar.age || 'Unknown'}\n`;
+                  result += `Occupation: ${targetChar.occupation || 'Unknown'}\n`;
+                  result += `Personality: ${targetChar.personality || 'Not defined'}\n`;
+                  result += `Goals: ${targetChar.goals || 'Not defined'}\n`;
+                  result += `Character Arc: ${targetChar.arc || 'Not defined'}\n`;
+                  result += `Backstory: ${targetChar.backstory || 'Not defined'}\n`;
+                  result += `Fears: ${targetChar.fears || 'Not defined'}\n`;
+                  if (targetChar.relationships && Object.keys(targetChar.relationships).length > 0) {
+                    result += `\nRelationships:\n`;
+                    for (const [name, desc] of Object.entries(targetChar.relationships)) {
+                      result += `  - ${name}: ${desc}\n`;
+                    }
+                  }
+                  result += `\nAppears in ${targetChar.appearances.length} scene(s)`;
+                  if (targetChar.notes) {
+                    result += `\n\nNotes: ${targetChar.notes}`;
+                  }
+                } else {
+                  result = `Character not found. Available characters: ${allCharacters.map(c => c.name).join(', ')}`;
+                }
+                break;
+
+              case 'search_screenplay':
+                const allScenes = await this.dbManager.getScenes();
+                const query = args.query.toLowerCase();
+                const matches: string[] = [];
+                
+                for (const scene of allScenes) {
+                  if (scene.content && scene.content.toLowerCase().includes(query)) {
+                    // Find the matching line and context
+                    const lines = scene.content.split('\n');
+                    for (let i = 0; i < lines.length; i++) {
+                      if (lines[i].toLowerCase().includes(query)) {
+                        const start = Math.max(0, i - 2);
+                        const end = Math.min(lines.length, i + 3);
+                        const context = lines.slice(start, end).join('\n');
+                        matches.push(`Scene ${scene.number} (${scene.heading}):\n${context}\n`);
+                        break; // One match per scene
+                      }
+                    }
+                  }
+                }
+                
+                if (matches.length > 0) {
+                  result = `Found "${args.query}" in ${matches.length} scene(s):\n\n${matches.join('\n---\n')}`;
+                } else {
+                  result = `No matches found for "${args.query}" in the screenplay.`;
+                }
+                break;
+
+              case 'get_character_scenes':
+                const charScenes = await this.dbManager.getScenes();
+                const charName = args.character_name.toUpperCase();
+                const charAppearances = charScenes.filter(s => 
+                  s.characters.some(c => c.toUpperCase() === charName) ||
+                  (s.content && s.content.toUpperCase().includes(charName))
+                );
+                
+                if (charAppearances.length > 0) {
+                  result = `${charName} appears in ${charAppearances.length} scene(s):\n\n`;
+                  for (const scene of charAppearances) {
+                    result += `=== Scene ${scene.number}: ${scene.heading} ===\n`;
+                    result += scene.content || '[No content]';
+                    result += '\n\n---\n\n';
+                  }
+                } else {
+                  result = `${charName} not found in any scenes.`;
+                }
+                break;
+
+              case 'get_screenplay_section':
+                const sectionScenes = await this.dbManager.getScenes();
+                const startNum = args.start_scene;
+                const endNum = args.end_scene;
+                const section = sectionScenes.filter(s => s.number >= startNum && s.number <= endNum);
+                
+                if (section.length > 0) {
+                  result = `=== SCENES ${startNum} to ${endNum} ===\n\n`;
+                  for (const scene of section) {
+                    result += `--- Scene ${scene.number}: ${scene.heading} ---\n`;
+                    result += scene.content || '[No content]';
+                    result += '\n\n';
+                  }
+                } else {
+                  result = `No scenes found in range ${startNum}-${endNum}. Total scenes: ${sectionScenes.length}`;
                 }
                 break;
             }
