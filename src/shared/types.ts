@@ -66,6 +66,14 @@ export interface AIMessage {
   content: string;
   timestamp: number;
   contextUsed?: AIContext;
+  conversationId?: string;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface AIContext {
@@ -126,7 +134,14 @@ export interface IpcChannels {
   'db:saveStoryline': (storyline: Storyline) => Promise<void>;
 
   'db:getAIHistory': () => Promise<AIMessage[]>;
+  'db:getAIHistoryForConversation': (conversationId: string) => Promise<AIMessage[]>;
   'db:saveAIMessage': (message: AIMessage) => Promise<void>;
+
+  // Conversation Operations
+  'db:getConversations': () => Promise<Conversation[]>;
+  'db:createConversation': (title: string) => Promise<Conversation>;
+  'db:updateConversation': (id: string, title: string) => Promise<void>;
+  'db:deleteConversation': (id: string) => Promise<void>;
 
   // AI Operations
   'ai:chat': (message: string, context: AIContext) => Promise<string>;
@@ -180,8 +195,15 @@ export interface WindowAPI {
     getStoryline: () => Promise<Storyline | null>;
     saveStoryline: (storyline: Storyline) => Promise<void>;
     getAIHistory: () => Promise<AIMessage[]>;
+    getAIHistoryForConversation: (conversationId: string) => Promise<AIMessage[]>;
     saveAIMessage: (message: AIMessage) => Promise<void>;
     clearDatabase: () => Promise<void>;
+    
+    // Conversation methods
+    getConversations: () => Promise<Conversation[]>;
+    createConversation: (title: string) => Promise<Conversation>;
+    updateConversation: (id: string, title: string) => Promise<void>;
+    deleteConversation: (id: string) => Promise<void>;
   };
 
   ai: {

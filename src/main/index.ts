@@ -543,6 +543,32 @@ ipcMain.handle('db:clearDatabase', async () => {
   return await dbManager.clearDatabase();
 });
 
+// Conversation Operations
+ipcMain.handle('db:getConversations', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getConversations();
+});
+
+ipcMain.handle('db:createConversation', async (_, title: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.createConversation(title);
+});
+
+ipcMain.handle('db:updateConversation', async (_, id: string, title: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.updateConversation(id, title);
+});
+
+ipcMain.handle('db:deleteConversation', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.deleteConversation(id);
+});
+
+ipcMain.handle('db:getAIHistoryForConversation', async (_, conversationId: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getAIHistoryForConversation(conversationId);
+});
+
 // AI Operations
 ipcMain.handle('ai:chat', async (_, message: string, context: any) => {
   if (!aiClient) throw new Error('AI client not initialized');

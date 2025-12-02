@@ -8,7 +8,8 @@ import type {
   GlobalSettings,
   ProjectSettings,
   AIContext,
-  PendingEdit
+  PendingEdit,
+  Conversation
 } from '../../shared/types';
 
 interface AppState {
@@ -19,6 +20,11 @@ interface AppState {
   scenes: Scene[];
   storyline: Storyline | null;
   aiHistory: AIMessage[];
+
+  // Conversation state
+  conversations: Conversation[];
+  currentConversationId: string | null;
+  isLoadingConversations: boolean;
 
   // Settings
   globalSettings: GlobalSettings | null;
@@ -76,6 +82,13 @@ interface AppState {
   analyzeStoryline: () => Promise<void>;
   reloadData: () => Promise<void>;
 
+  // Conversation actions
+  loadConversations: () => Promise<void>;
+  createConversation: (title?: string) => Promise<Conversation>;
+  deleteConversation: (id: string) => Promise<void>;
+  selectConversation: (id: string) => Promise<void>;
+  updateConversationTitle: (id: string, title: string) => Promise<void>;
+
   loadGlobalSettings: () => Promise<void>;
   saveGlobalSettings: (settings: Partial<GlobalSettings>) => Promise<void>;
   loadProjectSettings: () => Promise<void>;
@@ -90,6 +103,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   scenes: [],
   storyline: null,
   aiHistory: [],
+  conversations: [],
+  currentConversationId: null,
+  isLoadingConversations: false,
   globalSettings: null,
   projectSettings: null,
   isSettingsOpen: false,
@@ -195,6 +211,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         scenes: [],
         storyline: null,
         aiHistory: [],
+        conversations: [],
+        currentConversationId: null,
         projectSettings: null,
       });
     } catch (error) {
@@ -358,7 +376,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendAIMessage: async (message) => {
     try {
-      const { screenplayContent, characters, scenes, storyline } = get();
+      const { screenplayContent, characters, scenes, storyline, currentConversationId } = get();
+
+      // Ensure we have a conversation
+      let conversationId = currentConversationId;
+      if (!conversationId) {
+        const newConversation = await get().createConversation('New Chat');
+        conversationId = newConversation.id;
+      }
 
       const context: AIContext = {
         characters,
@@ -373,6 +398,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         role: 'user',
         content: message,
         timestamp: Date.now(),
+        conversationId,
       };
 
       await window.api.db.saveAIMessage(userMessage);
@@ -385,12 +411,26 @@ export const useAppStore = create<AppState>((set, get) => ({
         content: response,
         timestamp: Date.now(),
         contextUsed: context,
+        conversationId,
       };
 
       await window.api.db.saveAIMessage(assistantMessage);
 
-      const history = await window.api.db.getAIHistory();
+      // Reload history for current conversation
+      const history = await window.api.db.getAIHistoryForConversation(conversationId);
       set({ aiHistory: history });
+
+      // Update conversation title if it's the first message
+      const conversations = get().conversations;
+      const currentConv = conversations.find(c => c.id === conversationId);
+      if (currentConv && currentConv.title === 'New Chat') {
+        // Auto-generate title from first message (truncate to 30 chars)
+        const autoTitle = message.length > 30 ? message.substring(0, 30) + '...' : message;
+        await get().updateConversationTitle(conversationId, autoTitle);
+      }
+
+      // Reload conversations to update timestamps
+      await get().loadConversations();
     } catch (error) {
       console.error('Failed to send AI message:', error);
       throw error;
@@ -460,6 +500,71 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadProjectSettings();
     } catch (error) {
       console.error('Failed to save project settings:', error);
+      throw error;
+    }
+  },
+
+  // Conversation actions
+  loadConversations: async () => {
+    try {
+      set({ isLoadingConversations: true });
+      const conversations = await window.api.db.getConversations();
+      set({ conversations, isLoadingConversations: false });
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+      set({ isLoadingConversations: false });
+    }
+  },
+
+  createConversation: async (title = 'New Chat') => {
+    try {
+      const conversation = await window.api.db.createConversation(title);
+      await get().loadConversations();
+      set({ currentConversationId: conversation.id, aiHistory: [] });
+      return conversation;
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+      throw error;
+    }
+  },
+
+  deleteConversation: async (id) => {
+    try {
+      await window.api.db.deleteConversation(id);
+      await get().loadConversations();
+      
+      // If we deleted the current conversation, select another or clear
+      const { currentConversationId, conversations } = get();
+      if (currentConversationId === id) {
+        if (conversations.length > 0) {
+          await get().selectConversation(conversations[0].id);
+        } else {
+          set({ currentConversationId: null, aiHistory: [] });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      throw error;
+    }
+  },
+
+  selectConversation: async (id) => {
+    try {
+      set({ currentConversationId: id });
+      const history = await window.api.db.getAIHistoryForConversation(id);
+      set({ aiHistory: history });
+    } catch (error) {
+      console.error('Failed to select conversation:', error);
+      throw error;
+    }
+  },
+
+  updateConversationTitle: async (id, title) => {
+    try {
+      await window.api.db.updateConversation(id, title);
+      await get().loadConversations();
+    } catch (error) {
+      console.error('Failed to update conversation title:', error);
       throw error;
     }
   },

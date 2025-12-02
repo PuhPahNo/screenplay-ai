@@ -1,14 +1,94 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '../store/app-store';
-import { Bot, X, Send } from 'lucide-react';
+import { 
+  Bot, X, Send, Plus, Trash2, MessageSquare, 
+  ChevronLeft, ChevronRight, Loader2 
+} from 'lucide-react';
+import type { Conversation } from '../../shared/types';
+
+// Helper to format relative time
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+// Group conversations by time period
+function groupConversations(conversations: Conversation[]) {
+  const now = Date.now();
+  const today = new Date().setHours(0, 0, 0, 0);
+  const yesterday = today - 86400000;
+  const weekAgo = today - 7 * 86400000;
+
+  const groups: { label: string; conversations: Conversation[] }[] = [
+    { label: 'Today', conversations: [] },
+    { label: 'Yesterday', conversations: [] },
+    { label: 'Previous 7 Days', conversations: [] },
+    { label: 'Older', conversations: [] },
+  ];
+
+  conversations.forEach(conv => {
+    if (conv.updatedAt >= today) {
+      groups[0].conversations.push(conv);
+    } else if (conv.updatedAt >= yesterday) {
+      groups[1].conversations.push(conv);
+    } else if (conv.updatedAt >= weekAgo) {
+      groups[2].conversations.push(conv);
+    } else {
+      groups[3].conversations.push(conv);
+    }
+  });
+
+  return groups.filter(g => g.conversations.length > 0);
+}
 
 export default function AIChat() {
-  const { aiHistory, sendAIMessage, toggleAIChat } = useAppStore();
+  const { 
+    aiHistory, 
+    sendAIMessage, 
+    toggleAIChat,
+    conversations,
+    currentConversationId,
+    isLoadingConversations,
+    loadConversations,
+    createConversation,
+    deleteConversation,
+    selectConversation,
+  } = useAppStore();
+
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load conversations on mount
+  useEffect(() => {
+    const initializeChat = async () => {
+      await loadConversations();
+      
+      // After loading, if no current conversation and we have conversations, select the first one
+      const state = useAppStore.getState();
+      if (!state.currentConversationId && state.conversations.length > 0) {
+        await selectConversation(state.conversations[0].id);
+      }
+    };
+    
+    initializeChat();
+  }, []);
+
+  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiHistory]);
@@ -29,22 +109,21 @@ export default function AIChat() {
           id: tempId,
           role: 'user',
           content: userMessage,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          conversationId: state.currentConversationId || undefined
         }
       ]
     }));
 
     try {
       await sendAIMessage(userMessage);
-      // The store update in sendAIMessage will replace our optimistic one
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Revert optimistic update on error (optional, but good practice)
       useAppStore.setState(state => ({
         aiHistory: state.aiHistory.filter(msg => msg.id !== tempId)
       }));
       alert('Failed to send message: ' + error);
-      setMessage(userMessage); // Restore message to input
+      setMessage(userMessage);
     } finally {
       setIsSending(false);
     }
@@ -57,92 +136,247 @@ export default function AIChat() {
     }
   };
 
+  const handleNewChat = async () => {
+    await createConversation('New Chat');
+  };
+
+  const handleDeleteConversation = async (id: string) => {
+    await deleteConversation(id);
+    setDeleteConfirmId(null);
+  };
+
+  const groupedConversations = groupConversations(conversations);
+
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-dark-surface">
-      {/* Header */}
-      <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
-        <h3 className="font-semibold">AI Assistant</h3>
-        <button
-          onClick={toggleAIChat}
-          className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {aiHistory.length === 0 ? (
-          <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
-            <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
-            <p className="text-sm">Ask me anything about your screenplay!</p>
-            <div className="mt-6 space-y-2 text-xs">
-              <p className="font-medium">Try asking:</p>
-              <p>"Develop a character arc for John"</p>
-              <p>"What's the pacing of Act 2?"</p>
-              <p>"Suggest dialogue for the opening scene"</p>
-            </div>
+    <div className="h-full flex bg-white dark:bg-dark-surface">
+      {/* Conversation Sidebar */}
+      {showSidebar && (
+        <div className="w-56 border-r border-gray-200 dark:border-dark-border flex flex-col bg-gray-50 dark:bg-dark-bg">
+          {/* Sidebar Header */}
+          <div className="p-3 border-b border-gray-200 dark:border-dark-border">
+            <button
+              onClick={handleNewChat}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              New Chat
+            </button>
           </div>
-        ) : (
-          aiHistory
-            .filter((msg) => msg.role !== 'system')
-            .map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-lg px-4 py-2 ${msg.role === 'user'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
-                    }`}
-                >
-                  <div className={`text-sm prose dark:prose-invert max-w-none ${msg.role === 'user' ? 'text-white prose-headings:text-white prose-strong:text-white' : ''}`}>
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                  {msg.contextUsed && (
-                    <div className="mt-2 pt-2 border-t border-white/20 text-xs opacity-70">
-                      Context: {msg.contextUsed.characters.length} characters,{' '}
-                      {msg.contextUsed.scenes.length} scenes
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-        )}
-        <div ref={messagesEndRef} />
-      </div>
 
-      {/* Input */}
-      <div className="border-t border-gray-200 dark:border-dark-border p-4">
-        <div className="flex gap-2">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about characters, scenes, or storyline..."
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-            rows={3}
-            disabled={isSending}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!message.trim() || isSending}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors self-end flex items-center gap-2"
-          >
-            {isSending ? 'Sending...' : (
-              <>
-                <Send className="w-4 h-4" />
-                Send
-              </>
+          {/* Conversation List */}
+          <div className="flex-1 overflow-y-auto">
+            {isLoadingConversations ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="text-center py-8 px-4 text-gray-500 dark:text-gray-400">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-xs">No conversations yet</p>
+                <p className="text-xs mt-1">Start a new chat!</p>
+              </div>
+            ) : (
+              <div className="py-2">
+                {groupedConversations.map((group) => (
+                  <div key={group.label} className="mb-2">
+                    <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {group.label}
+                    </div>
+                    {group.conversations.map((conv) => (
+                      <div
+                        key={conv.id}
+                        className={`relative group mx-2 rounded-lg transition-colors ${
+                          conv.id === currentConversationId
+                            ? 'bg-primary-100 dark:bg-primary-900/30'
+                            : 'hover:bg-gray-100 dark:hover:bg-dark-surface'
+                        }`}
+                        onMouseEnter={() => setHoveredConvId(conv.id)}
+                        onMouseLeave={() => {
+                          setHoveredConvId(null);
+                          if (deleteConfirmId === conv.id) setDeleteConfirmId(null);
+                        }}
+                      >
+                        <button
+                          onClick={() => selectConversation(conv.id)}
+                          className="w-full text-left px-3 py-2"
+                        >
+                          <div className={`text-sm truncate ${
+                            conv.id === currentConversationId
+                              ? 'text-primary-700 dark:text-primary-300 font-medium'
+                              : 'text-gray-700 dark:text-gray-300'
+                          }`}>
+                            {conv.title}
+                          </div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                            {formatRelativeTime(conv.updatedAt)}
+                          </div>
+                        </button>
+
+                        {/* Delete button */}
+                        {hoveredConvId === conv.id && (
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                            {deleteConfirmId === conv.id ? (
+                              <button
+                                onClick={() => handleDeleteConversation(conv.id)}
+                                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                              >
+                                Delete
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmId(conv.id);
+                                }}
+                                className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             )}
+          </div>
+
+          {/* Collapse Button */}
+          <div className="p-2 border-t border-gray-200 dark:border-dark-border">
+            <button
+              onClick={() => setShowSidebar(false)}
+              className="w-full flex items-center justify-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Hide
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            {!showSidebar && (
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+              {currentConversationId 
+                ? conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'
+                : 'AI Assistant'
+              }
+            </h3>
+          </div>
+          <button
+            onClick={toggleAIChat}
+            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Press Enter to send, Shift+Enter for new line
-        </p>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {aiHistory.length === 0 ? (
+            <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
+              <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
+              <p className="text-sm font-medium">Start a conversation</p>
+              <p className="text-xs mt-2 max-w-xs mx-auto">
+                Ask me anything about your screenplay - characters, plot, dialogue, or structure.
+              </p>
+              <div className="mt-6 space-y-2">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Try asking:</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {[
+                    'Analyze my protagonist',
+                    'Check scene pacing',
+                    'Suggest dialogue',
+                    'Find plot holes',
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => setMessage(suggestion)}
+                      className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-dark-bg hover:bg-gray-200 dark:hover:bg-dark-border rounded-full transition-colors"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            aiHistory
+              .filter((msg) => msg.role !== 'system')
+              .map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      msg.role === 'user'
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
+                    }`}
+                  >
+                    <div className={`text-sm prose dark:prose-invert max-w-none ${
+                      msg.role === 'user' 
+                        ? 'text-white prose-headings:text-white prose-strong:text-white' 
+                        : ''
+                    }`}>
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                    {msg.contextUsed && (
+                      <div className="mt-2 pt-2 border-t border-white/20 text-xs opacity-70">
+                        Context: {msg.contextUsed.characters.length} characters,{' '}
+                        {msg.contextUsed.scenes.length} scenes
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-gray-200 dark:border-dark-border p-4">
+          <div className="flex gap-2">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about characters, scenes, or storyline..."
+              className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-xl bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none transition-shadow"
+              rows={2}
+              disabled={isSending}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!message.trim() || isSending}
+              className="px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all self-end flex items-center gap-2 shadow-sm hover:shadow-md"
+            >
+              {isSending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
+            Enter to send · Shift+Enter for new line
+          </p>
+        </div>
       </div>
     </div>
   );
 }
-

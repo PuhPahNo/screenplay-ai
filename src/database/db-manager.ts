@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { Character, Scene, Storyline, AIMessage } from '../shared/types';
+import type { Character, Scene, Storyline, AIMessage, Conversation } from '../shared/types';
 
 const SCHEMA = `
 -- Characters table
@@ -59,20 +59,31 @@ CREATE TABLE IF NOT EXISTS ai_memory (
   embedding BLOB
 );
 
--- AI History table
+-- Conversations table
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- AI History table (with conversation_id)
 CREATE TABLE IF NOT EXISTS ai_history (
   id TEXT PRIMARY KEY,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   timestamp INTEGER NOT NULL,
-  context_used TEXT
+  context_used TEXT,
+  conversation_id TEXT REFERENCES conversations(id)
 );
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_scenes_number ON scenes(number);
 CREATE INDEX IF NOT EXISTS idx_scenes_order ON scenes(scene_order);
 CREATE INDEX IF NOT EXISTS idx_ai_history_timestamp ON ai_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_ai_history_conversation ON ai_history(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_context_type ON ai_memory(context_type);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
 `;
 
 export class DatabaseManager {
@@ -92,6 +103,39 @@ export class DatabaseManager {
   private initialize() {
     // Create tables if they don't exist
     this.db.exec(SCHEMA);
+    
+    // Run migrations for existing databases
+    this.runMigrations();
+  }
+
+  private runMigrations() {
+    // Migration 1: Add conversation_id to ai_history if it doesn't exist
+    const columns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
+    const hasConversationId = columns.some(col => col.name === 'conversation_id');
+    
+    if (!hasConversationId) {
+      console.log('[DB] Running migration: Adding conversation_id to ai_history');
+      this.db.exec('ALTER TABLE ai_history ADD COLUMN conversation_id TEXT');
+      
+      // Migrate existing messages to a default conversation
+      const existingMessages = this.db.prepare('SELECT id FROM ai_history WHERE conversation_id IS NULL').all();
+      if (existingMessages.length > 0) {
+        const defaultConversationId = 'conv-default-' + Date.now();
+        const now = Date.now();
+        
+        // Create default conversation
+        this.db.prepare(`
+          INSERT INTO conversations (id, title, created_at, updated_at)
+          VALUES (?, ?, ?, ?)
+        `).run(defaultConversationId, 'Previous Conversation', now, now);
+        
+        // Update all existing messages
+        this.db.prepare('UPDATE ai_history SET conversation_id = ? WHERE conversation_id IS NULL')
+          .run(defaultConversationId);
+        
+        console.log(`[DB] Migrated ${existingMessages.length} messages to default conversation`);
+      }
+    }
   }
 
   // Character operations
@@ -281,6 +325,47 @@ export class DatabaseManager {
     );
   }
 
+  // Conversation operations
+  async getConversations(): Promise<Conversation[]> {
+    const rows = this.db.prepare('SELECT * FROM conversations ORDER BY updated_at DESC').all();
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  async createConversation(title: string): Promise<Conversation> {
+    const id = 'conv-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+    
+    this.db.prepare(`
+      INSERT INTO conversations (id, title, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+    `).run(id, title, now, now);
+    
+    return { id, title, createdAt: now, updatedAt: now };
+  }
+
+  async updateConversation(id: string, title: string): Promise<void> {
+    this.db.prepare(`
+      UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?
+    `).run(title, Date.now(), id);
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    // Delete all messages in the conversation first
+    this.db.prepare('DELETE FROM ai_history WHERE conversation_id = ?').run(id);
+    // Then delete the conversation
+    this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+  }
+
+  async updateConversationTimestamp(id: string): Promise<void> {
+    this.db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(Date.now(), id);
+  }
+
   // AI History operations
   async getAIHistory(): Promise<AIMessage[]> {
     const rows = this.db.prepare('SELECT * FROM ai_history ORDER BY timestamp').all();
@@ -291,13 +376,29 @@ export class DatabaseManager {
       content: row.content,
       timestamp: row.timestamp,
       contextUsed: row.context_used ? JSON.parse(row.context_used) : undefined,
+      conversationId: row.conversation_id || undefined,
+    }));
+  }
+
+  async getAIHistoryForConversation(conversationId: string): Promise<AIMessage[]> {
+    const rows = this.db.prepare(
+      'SELECT * FROM ai_history WHERE conversation_id = ? ORDER BY timestamp'
+    ).all(conversationId);
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      timestamp: row.timestamp,
+      contextUsed: row.context_used ? JSON.parse(row.context_used) : undefined,
+      conversationId: row.conversation_id,
     }));
   }
 
   async saveAIMessage(message: AIMessage): Promise<void> {
     const stmt = this.db.prepare(`
-      INSERT INTO ai_history (id, role, content, timestamp, context_used)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO ai_history (id, role, content, timestamp, context_used, conversation_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     
     stmt.run(
@@ -305,8 +406,14 @@ export class DatabaseManager {
       message.role,
       message.content,
       message.timestamp,
-      message.contextUsed ? JSON.stringify(message.contextUsed) : null
+      message.contextUsed ? JSON.stringify(message.contextUsed) : null,
+      message.conversationId || null
     );
+    
+    // Update conversation timestamp
+    if (message.conversationId) {
+      this.updateConversationTimestamp(message.conversationId);
+    }
   }
 
   // AI Memory operations
@@ -339,6 +446,7 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM storyline').run();
     this.db.prepare('DELETE FROM ai_history').run();
     this.db.prepare('DELETE FROM ai_memory').run();
+    this.db.prepare('DELETE FROM conversations').run();
   }
 
   close() {

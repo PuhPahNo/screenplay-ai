@@ -22,8 +22,17 @@ const api: WindowAPI = {
     getStoryline: () => ipcRenderer.invoke('db:getStoryline'),
     saveStoryline: (storyline) => ipcRenderer.invoke('db:saveStoryline', storyline),
     getAIHistory: () => ipcRenderer.invoke('db:getAIHistory'),
+    getAIHistoryForConversation: (conversationId: string) => 
+      ipcRenderer.invoke('db:getAIHistoryForConversation', conversationId),
     saveAIMessage: (message) => ipcRenderer.invoke('db:saveAIMessage', message),
     clearDatabase: () => ipcRenderer.invoke('db:clearDatabase'),
+    
+    // Conversation methods
+    getConversations: () => ipcRenderer.invoke('db:getConversations'),
+    createConversation: (title: string) => ipcRenderer.invoke('db:createConversation', title),
+    updateConversation: (id: string, title: string) => 
+      ipcRenderer.invoke('db:updateConversation', id, title),
+    deleteConversation: (id: string) => ipcRenderer.invoke('db:deleteConversation', id),
   },
   
   ai: {
