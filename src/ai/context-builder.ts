@@ -133,17 +133,13 @@ Remember: Your job is to make this screenplay as strong as possible. Be the toug
       }
     }
 
-    // Add current screenplay content (expanded limit for better context)
+    // Add FULL screenplay content - no limits
+    // GPT-5 mini has 128K context window, so we can send entire screenplays
     if (context.currentContent) {
-      // Increased from 2000 to 10000 chars for much better context understanding
-      const contentPreview = context.currentContent.substring(0, 10000);
-      prompt += '## CURRENT SCREENPLAY EXCERPT:\n\n';
-      prompt += contentPreview;
-      if (context.currentContent.length > 10000) {
-        const remaining = context.currentContent.length - 10000;
-        prompt += `\n\n... (${remaining} more characters in full screenplay)`;
-      }
+      prompt += '## FULL SCREENPLAY CONTENT:\n\n';
+      prompt += context.currentContent;
       prompt += '\n\n';
+      prompt += `[Total: ${context.currentContent.length} characters, ~${Math.round(context.currentContent.length / 4)} tokens]\n\n`;
     }
 
     prompt += '=== END CONTEXT ===\n\n';

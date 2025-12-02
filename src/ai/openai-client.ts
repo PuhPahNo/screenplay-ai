@@ -179,7 +179,7 @@ export class AIClient {
         tools,
         tool_choice: 'auto',
         temperature: 0.7,
-        max_completion_tokens: 2000,
+        max_completion_tokens: 4000,
       });
 
       const responseMessage = completion.choices[0]?.message;
@@ -342,7 +342,7 @@ Arc: ${characterInfo.arc}
           },
         ],
         temperature: 0.8,
-        max_completion_tokens: 500,
+        max_completion_tokens: 2000,
       });
 
       return completion.choices[0]?.message?.content || '';
@@ -367,7 +367,7 @@ Arc: ${characterInfo.arc}
           },
         ],
         temperature: 0.7,
-        max_completion_tokens: 1500,
+        max_completion_tokens: 6000,
       });
 
       return completion.choices[0]?.message?.content || '';
@@ -424,7 +424,7 @@ Respond in JSON format with this structure:
           },
         ],
         temperature: 0.5,
-        max_completion_tokens: 2000,
+        max_completion_tokens: 4000,
         response_format: { type: 'json_object' },
       });
 
@@ -517,7 +517,7 @@ Return a JSON object with this structure:
           },
         ],
         temperature: 0.3,
-        max_completion_tokens: 3000,
+        max_completion_tokens: 6000,
         response_format: { type: 'json_object' },
       });
 
@@ -559,7 +559,7 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
           },
         ],
         temperature: 0.5,
-        max_completion_tokens: 4000,
+        max_completion_tokens: 8000,
         response_format: { type: 'json_object' },
       });
 
