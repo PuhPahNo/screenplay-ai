@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/app-store';
-import { Bot, Lightbulb, MessageSquare, FileText, Edit, X } from 'lucide-react';
+import { Bot, Lightbulb, MessageSquare, FileText, Edit, X, Send } from 'lucide-react';
 
 interface AgenticAction {
-  type: 'dialogue' | 'expand' | 'rewrite' | 'suggest';
+  type: 'dialogue' | 'expand' | 'rewrite' | 'suggest' | 'chat';
   label: string;
   icon: string;
   description: string;
 }
 
 const actionIcons = {
+  chat: Send,
   suggest: Lightbulb,
   dialogue: MessageSquare,
   expand: FileText,
@@ -17,6 +18,12 @@ const actionIcons = {
 };
 
 const actions: AgenticAction[] = [
+  {
+    type: 'chat',
+    label: 'Ask AI Anything',
+    icon: '💬',
+    description: 'Send a custom message to the AI',
+  },
   {
     type: 'suggest',
     label: 'AI Suggestions',
@@ -44,13 +51,15 @@ const actions: AgenticAction[] = [
 ];
 
 export default function AgenticAssistant() {
-  const { screenplayContent, setScreenplayContent, isAIChatOpen } = useAppStore();
+  const { screenplayContent, setScreenplayContent, isAIChatOpen, sendAIMessage } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [characterName, setCharacterName] = useState('');
   const [sceneContext, setSceneContext] = useState('');
   const [outline, setOutline] = useState('');
+  const [customMessage, setCustomMessage] = useState('');
+  const [chatResponse, setChatResponse] = useState('');
 
   // Hide if AI Chat sidebar is open
   if (isAIChatOpen) {
@@ -93,6 +102,24 @@ export default function AgenticAssistant() {
       setSelectedAction(null);
     } catch (error) {
       alert('Failed to expand scene: ' + error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCustomChat = async () => {
+    if (!customMessage.trim()) {
+      return;
+    }
+
+    setIsProcessing(true);
+    setChatResponse('');
+    try {
+      await sendAIMessage(customMessage.trim());
+      setChatResponse('Response received! Check the AI Chat sidebar for the full conversation.');
+      setCustomMessage('');
+    } catch (error) {
+      setChatResponse('Error: ' + error);
     } finally {
       setIsProcessing(false);
     }
@@ -237,6 +264,48 @@ export default function AgenticAssistant() {
                   and choose "Rewrite with AI"
                 </p>
               </div>
+            )}
+
+            {selectedAction === 'chat' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Your Message</label>
+                  <textarea
+                    value={customMessage}
+                    onChange={(e) => setCustomMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleCustomChat();
+                      }
+                    }}
+                    placeholder="Ask the AI anything about your screenplay..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                    disabled={isProcessing}
+                  />
+                </div>
+                <button
+                  onClick={handleCustomChat}
+                  disabled={isProcessing || !customMessage.trim()}
+                  className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? 'Sending...' : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Send Message
+                    </>
+                  )}
+                </button>
+                {chatResponse && (
+                  <div className={`p-3 rounded-lg text-sm ${chatResponse.startsWith('Error') ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'}`}>
+                    {chatResponse}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Press Enter to send, Shift+Enter for new line
+                </p>
+              </>
             )}
           </div>
         )}
