@@ -241,7 +241,7 @@ app.whenReady().then(() => {
 
   // Setup auto-updater
   if (!isDev) {
-    setupAutoUpdater();
+    setupAutoUpdater(mainWindow);
   }
 
   app.on('activate', () => {
@@ -594,6 +594,18 @@ ipcMain.handle('ai:analyzeStoryline', async () => {
 ipcMain.handle('db:getConversation', async (_, id: string) => {
   if (!dbManager) throw new Error('No database open');
   return await dbManager.getConversation(id);
+});
+
+// Get database schema version
+ipcMain.handle('db:getSchemaVersion', async () => {
+  if (!dbManager) return 0;
+  return dbManager.getSchemaVersion();
+});
+
+// Check if database was upgraded from old version
+ipcMain.handle('db:isOldDatabase', async () => {
+  if (!dbManager) return false;
+  return dbManager.isOldDatabase();
 });
 
 // Save conversation summary

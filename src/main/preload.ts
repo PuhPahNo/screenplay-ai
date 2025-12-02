@@ -36,6 +36,8 @@ const api: WindowAPI = {
     deleteConversation: (id: string) => ipcRenderer.invoke('db:deleteConversation', id),
     saveConversationSummary: (id: string, summary: string) =>
       ipcRenderer.invoke('db:saveConversationSummary', id, summary),
+    getSchemaVersion: () => ipcRenderer.invoke('db:getSchemaVersion'),
+    isOldDatabase: () => ipcRenderer.invoke('db:isOldDatabase'),
   },
   
   ai: {

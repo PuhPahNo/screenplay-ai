@@ -3,7 +3,16 @@ import fs from 'fs';
 import path from 'path';
 import type { Character, Scene, Storyline, AIMessage, Conversation } from '../shared/types';
 
+// Current schema version - increment when making breaking changes
+const CURRENT_SCHEMA_VERSION = 2;
+
 const SCHEMA = `
+-- Schema version tracking
+CREATE TABLE IF NOT EXISTS schema_info (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- Characters table
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
@@ -109,14 +118,46 @@ export class DatabaseManager {
     
     // Run migrations for existing databases
     this.runMigrations();
+    
+    // Update schema version
+    this.setSchemaVersion(CURRENT_SCHEMA_VERSION);
+  }
+
+  getSchemaVersion(): number {
+    try {
+      const row = this.db.prepare("SELECT value FROM schema_info WHERE key = 'version'").get() as any;
+      return row ? parseInt(row.value, 10) : 0;
+    } catch {
+      return 0; // Very old database without schema_info table
+    }
+  }
+
+  private setSchemaVersion(version: number): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO schema_info (key, value) VALUES ('version', ?)
+    `).run(version.toString());
+  }
+
+  isOldDatabase(): boolean {
+    return this.getSchemaVersion() < CURRENT_SCHEMA_VERSION;
   }
 
   private runMigrations() {
+    const startVersion = this.getSchemaVersion();
+    console.log(`[DB] Current schema version: ${startVersion}, target: ${CURRENT_SCHEMA_VERSION}`);
+    
+    if (startVersion >= CURRENT_SCHEMA_VERSION) {
+      console.log('[DB] Database is up to date, no migrations needed');
+      return;
+    }
+    
+    console.log('[DB] Running database migrations...');
+    
     try {
       // First, ensure conversations table exists (for older databases)
       const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'").all();
       if (tables.length === 0) {
-        console.log('[DB] Running migration: Creating conversations table');
+        console.log('[DB] Migration: Creating conversations table');
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY,
@@ -135,7 +176,7 @@ export class DatabaseManager {
       const hasConversationId = aiHistoryColumns.some((col: any) => col.name === 'conversation_id');
       
       if (!hasConversationId) {
-        console.log('[DB] Running migration: Adding conversation_id to ai_history');
+        console.log('[DB] Migration: Adding conversation_id to ai_history');
         this.db.exec('ALTER TABLE ai_history ADD COLUMN conversation_id TEXT');
         
         // Migrate existing messages to a default conversation
@@ -154,7 +195,7 @@ export class DatabaseManager {
           this.db.prepare('UPDATE ai_history SET conversation_id = ?')
             .run(defaultConversationId);
           
-          console.log(`[DB] Migrated ${existingMessages.length} messages to default conversation`);
+          console.log(`[DB] Migration: Moved ${existingMessages.length} messages to default conversation`);
         }
       }
 
@@ -163,7 +204,7 @@ export class DatabaseManager {
       const updatedAiHistoryColumns = this.db.prepare("PRAGMA table_info(ai_history)").all() as any[];
       const hasTokenUsage = updatedAiHistoryColumns.some((col: any) => col.name === 'token_usage');
       if (!hasTokenUsage) {
-        console.log('[DB] Running migration: Adding token_usage to ai_history');
+        console.log('[DB] Migration: Adding token_usage to ai_history');
         this.db.exec('ALTER TABLE ai_history ADD COLUMN token_usage TEXT');
       }
 
@@ -173,15 +214,15 @@ export class DatabaseManager {
       const hasTotalTokens = convColumns.some((col: any) => col.name === 'total_tokens_used');
       
       if (!hasContextSummary) {
-        console.log('[DB] Running migration: Adding context_summary to conversations');
+        console.log('[DB] Migration: Adding context_summary to conversations');
         this.db.exec('ALTER TABLE conversations ADD COLUMN context_summary TEXT');
       }
       if (!hasTotalTokens) {
-        console.log('[DB] Running migration: Adding total_tokens_used to conversations');
+        console.log('[DB] Migration: Adding total_tokens_used to conversations');
         this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
       }
       
-      console.log('[DB] Migrations completed successfully');
+      console.log(`[DB] Migrations completed: ${startVersion} → ${CURRENT_SCHEMA_VERSION}`);
     } catch (error) {
       console.error('[DB] Migration error:', error);
       throw error;

@@ -227,6 +227,8 @@ export interface WindowAPI {
     updateConversation: (id: string, title: string) => Promise<void>;
     deleteConversation: (id: string) => Promise<void>;
     saveConversationSummary: (id: string, summary: string) => Promise<void>;
+    getSchemaVersion: () => Promise<number>;
+    isOldDatabase: () => Promise<boolean>;
   };
 
   ai: {
