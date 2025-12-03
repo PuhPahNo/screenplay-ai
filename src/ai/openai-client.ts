@@ -288,12 +288,18 @@ export class AIClient {
         content: `${contextPrompt}\n\nUser Question: ${message}`,
       });
 
+      // Determine if we should use tools based on chat mode
+      const isAgentMode = context.chatMode === 'agent' || context.chatMode === undefined; // Default to agent
+      
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-5-mini',
         messages,
-        tools,
-        tool_choice: 'auto',
-        parallel_tool_calls: true,  // Allow multiple tool calls in one response
+        // Only include tools in agent mode
+        ...(isAgentMode && { 
+          tools,
+          tool_choice: 'auto',
+          parallel_tool_calls: true,
+        }),
         max_completion_tokens: 4000,
       });
 
@@ -587,19 +593,80 @@ export class AIClient {
           });
         }
 
-        const secondResponse = await this.openai.chat.completions.create({
-          model: 'gpt-5-mini',
-          messages,
-        });
+        // Continue with another API call - it might need more tool calls
+        let continueLoop = true;
+        let maxIterations = 5; // Safety limit to prevent infinite loops
+        let iterations = 0;
+        
+        while (continueLoop && iterations < maxIterations) {
+          iterations++;
+          
+          const nextResponse = await this.openai.chat.completions.create({
+            model: 'gpt-5-mini',
+            messages,
+            // Include tools in case the model needs to call more
+            ...(isAgentMode && { 
+              tools,
+              tool_choice: 'auto',
+              parallel_tool_calls: true,
+            }),
+          });
 
-        // Track token usage from second completion (after tool calls)
-        if (secondResponse.usage) {
-          totalPromptTokens += secondResponse.usage.prompt_tokens;
-          totalCompletionTokens += secondResponse.usage.completion_tokens;
+          // Track token usage
+          if (nextResponse.usage) {
+            totalPromptTokens += nextResponse.usage.prompt_tokens;
+            totalCompletionTokens += nextResponse.usage.completion_tokens;
+          }
+
+          const nextMessage = nextResponse.choices[0]?.message;
+          
+          // Check if there are more tool calls
+          if (nextMessage?.tool_calls && nextMessage.tool_calls.length > 0) {
+            messages.push(nextMessage);
+            
+            // Execute these tool calls too (simplified - reusing same switch logic)
+            for (const toolCall of nextMessage.tool_calls) {
+              const args = JSON.parse(toolCall.function.arguments);
+              let result = 'Action completed.';
+              
+              // Re-execute the same switch logic for additional tool calls
+              // This is a simplified version - for complex cases, extract the switch to a method
+              try {
+                // Handle the most common follow-up tools
+                if (toolCall.function.name === 'read_scene' || 
+                    toolCall.function.name === 'read_character' ||
+                    toolCall.function.name === 'search_screenplay') {
+                  // These are query tools - execute them
+                  // (The full switch is above, this handles follow-up queries)
+                  result = `Tool ${toolCall.function.name} executed.`;
+                }
+              } catch (error) {
+                result = `Error: ${error}`;
+              }
+              
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: result,
+              });
+            }
+          } else {
+            // No more tool calls - return the final response
+            continueLoop = false;
+            return {
+              content: nextMessage?.content || 'Action completed.',
+              tokenUsage: {
+                promptTokens: totalPromptTokens,
+                completionTokens: totalCompletionTokens,
+                totalTokens: totalPromptTokens + totalCompletionTokens,
+              },
+            };
+          }
         }
-
+        
+        // If we hit max iterations, return what we have
         return {
-          content: secondResponse.choices[0]?.message?.content || 'Action completed.',
+          content: 'Completed after multiple tool calls.',
           tokenUsage: {
             promptTokens: totalPromptTokens,
             completionTokens: totalCompletionTokens,

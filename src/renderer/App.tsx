@@ -120,6 +120,12 @@ function App() {
       useAppStore.getState().reloadData();
     });
 
+    // Listen for AI edit previews
+    window.api.on('editor:previewUpdate', (edit: any) => {
+      console.log('[App] Received edit preview from AI:', edit.description);
+      useAppStore.getState().setPendingEdit(edit);
+    });
+
     return () => {
       window.api.off('update-downloading', () => { });
       window.api.off('update-progress', () => { });
@@ -136,6 +142,7 @@ function App() {
       window.api.off('menu:analyze-storyline', () => { });
       window.api.off('menu:open-settings', () => { });
       window.api.off('data:update', () => { });
+      window.api.off('editor:previewUpdate', () => { });
     };
   }, []);
 

@@ -72,6 +72,8 @@ export default function AIChat() {
     createConversation,
     deleteConversation,
     selectConversation,
+    chatMode,
+    setChatMode,
   } = useAppStore();
 
   const [message, setMessage] = useState('');
@@ -175,15 +177,44 @@ export default function AIChat() {
               }
             </h3>
           </div>
-          {!showSidebar && (
-            <button
-              onClick={() => setShowSidebar(true)}
-              className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              title="Show conversations"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-          )}
+          
+          <div className="flex items-center gap-2">
+            {/* Ask/Agent Mode Toggle */}
+            <div className="flex rounded-lg bg-gray-100 dark:bg-dark-bg p-0.5">
+              <button
+                onClick={() => setChatMode('ask')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                  chatMode === 'ask'
+                    ? 'bg-white dark:bg-dark-surface text-primary-600 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+                title="Ask mode: Get advice and analysis (no actions)"
+              >
+                Ask
+              </button>
+              <button
+                onClick={() => setChatMode('agent')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                  chatMode === 'agent'
+                    ? 'bg-orange-500 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+                title="Agent mode: Take actions (create, edit, delete)"
+              >
+                Agent
+              </button>
+            </div>
+            
+            {!showSidebar && (
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                title="Show conversations"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Messages */}

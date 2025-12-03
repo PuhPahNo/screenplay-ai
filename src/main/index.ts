@@ -404,6 +404,9 @@ Date: ${today}
       },
       notifyUpdate: () => {
         mainWindow?.webContents.send('data:update');
+      },
+      previewUpdate: (edit) => {
+        mainWindow?.webContents.send('editor:previewUpdate', edit);
       }
     };
     aiClient = new AIClient(apiKey, dbManager, systemActions);
@@ -485,6 +488,9 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
       },
       notifyUpdate: () => {
         mainWindow?.webContents.send('data:update');
+      },
+      previewUpdate: (edit) => {
+        mainWindow?.webContents.send('editor:previewUpdate', edit);
       }
     };
     aiClient = new AIClient(apiKey, dbManager, systemActions);
@@ -685,10 +691,23 @@ ipcMain.handle('db:saveConversationSummary', async (_, id: string, summary: stri
 // Summarize conversation
 ipcMain.handle('ai:summarizeConversation', async (_, conversationId: string) => {
   if (!dbManager) throw new Error('No database open');
-  if (!globalSettings?.openaiApiKey) throw new Error('OpenAI API key not configured');
+  
+  // Get API key from encrypted storage
+  const encryptedApiKey = store.get('openaiApiKey_encrypted', '') as string;
+  if (!encryptedApiKey) throw new Error('OpenAI API key not configured');
+  
+  let decryptedApiKey = '';
+  try {
+    const keyBuffer = Buffer.from(encryptedApiKey, 'base64');
+    decryptedApiKey = safeStorage.decryptString(keyBuffer);
+  } catch (err) {
+    throw new Error('Failed to decrypt API key');
+  }
+  
+  if (!decryptedApiKey || decryptedApiKey.length < 20) throw new Error('Invalid API key');
 
   const { ContextSummarizer } = await import('../ai/context-summarizer');
-  const summarizer = new ContextSummarizer(globalSettings.openaiApiKey);
+  const summarizer = new ContextSummarizer(decryptedApiKey);
 
   const messages = await dbManager.getAIHistoryForConversation(conversationId);
   const result = await summarizer.summarize(messages);
@@ -773,6 +792,9 @@ ipcMain.handle('settings:setGlobal', async (_, settings: any) => {
           },
           notifyUpdate: () => {
             mainWindow?.webContents.send('data:update');
+          },
+          previewUpdate: (edit) => {
+            mainWindow?.webContents.send('editor:previewUpdate', edit);
           }
         };
         aiClient = new AIClient(decryptedKey, dbManager, systemActions);

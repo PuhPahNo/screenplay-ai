@@ -120,6 +120,7 @@ export interface AIContext {
   currentContent: string;
   history?: AIMessage[];
   conversationSummary?: string;
+  chatMode?: 'ask' | 'agent';
 }
 
 export interface PendingEdit {

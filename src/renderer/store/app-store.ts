@@ -54,6 +54,7 @@ interface AppState {
   activePanel: 'characters' | 'scenes' | 'storyline' | null;
   pendingEdit: PendingEdit | null;
   updateState: UpdateState;
+  chatMode: 'ask' | 'agent';
 
   // Actions
   setCurrentProject: (project: Project | null) => void;
@@ -70,6 +71,7 @@ interface AppState {
   setShowExportModal: (show: boolean) => void;
   setShowAnalyzePrompt: (show: boolean) => void;
   toggleAIChat: () => void;
+  setChatMode: (mode: 'ask' | 'agent') => void;
   setSelectedCharacterId: (id: string | null) => void;
   setSelectedSceneId: (id: string | null) => void;
   setActivePanel: (panel: 'characters' | 'scenes' | 'storyline' | null) => void;
@@ -133,6 +135,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activePanel: null,
   pendingEdit: null,
   updateState: { status: 'idle' },
+  chatMode: 'agent', // Default to agent mode for actions
 
   // Setters
   setCurrentProject: (project) => set({ currentProject: project }),
@@ -156,6 +159,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowExportModal: (show) => set({ showExportModal: show }),
   setShowAnalyzePrompt: (show) => set({ showAnalyzePrompt: show }),
   toggleAIChat: () => set((state) => ({ isAIChatOpen: !state.isAIChatOpen })),
+  setChatMode: (mode) => set({ chatMode: mode }),
   setSelectedCharacterId: (id) => set({ selectedCharacterId: id }),
   setSelectedSceneId: (id) => set({ selectedSceneId: id }),
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -249,8 +253,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   saveScreenplay: async () => {
     try {
+      console.log('[Store] saveScreenplay called');
       const { screenplayContent } = get();
+      console.log('[Store] Saving screenplay content, length:', screenplayContent.length, 'chars');
       await window.api.project.save(screenplayContent);
+      console.log('[Store] Screenplay file saved successfully');
 
       // Re-parse and update database
       const parsed = await window.api.parse.fountain(screenplayContent);
@@ -337,8 +344,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       await get().loadCharacters();
+      console.log('[Store] saveScreenplay completed successfully');
     } catch (error) {
-      console.error('Failed to save screenplay:', error);
+      console.error('[Store] Failed to save screenplay:', error);
       throw error;
     }
   },
@@ -402,7 +410,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendAIMessage: async (message) => {
     try {
-      const { screenplayContent, characters, scenes, storyline, currentConversationId } = get();
+      const { screenplayContent, characters, scenes, storyline, currentConversationId, chatMode } = get();
 
       // Ensure we have a conversation
       let conversationId = currentConversationId;
@@ -421,6 +429,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentContent: screenplayContent,
         history: get().aiHistory,
         conversationSummary: conversation?.contextSummary,
+        chatMode, // Pass current mode to AI
       };
 
       const userMessage: AIMessage = {
@@ -432,6 +441,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
 
       await window.api.db.saveAIMessage(userMessage);
+
+      // Add user message to UI immediately (don't wait for AI response)
+      set({ aiHistory: [...get().aiHistory, userMessage] });
 
       const response = await window.api.ai.chat(message, context);
 
