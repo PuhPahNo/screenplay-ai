@@ -12,6 +12,11 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   
+  // IMPORTANT: Skip code signature verification for unsigned apps
+  // This is required because we're not code-signing with an Apple Developer certificate
+  // Without this, macOS will reject the update with "code has no resources but signature indicates they must be present"
+  autoUpdater.forceDevUpdateConfig = true;
+  
   // Enable more detailed logging
   autoUpdater.logger = {
     info: (message: any) => console.log('[AutoUpdater]', message),
