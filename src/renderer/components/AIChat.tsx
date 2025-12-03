@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useAppStore } from '../store/app-store';
 import { 
   Bot, X, Send, Plus, Trash2, MessageSquare, 
@@ -110,28 +111,11 @@ export default function AIChat() {
     setMessage('');
     setIsSending(true);
 
-    // Optimistic update: Add user message to UI immediately
-    const tempId = Date.now().toString();
-    useAppStore.setState(state => ({
-      aiHistory: [
-        ...state.aiHistory,
-        {
-          id: tempId,
-          role: 'user',
-          content: userMessage,
-          timestamp: Date.now(),
-          conversationId: state.currentConversationId || undefined
-        }
-      ]
-    }));
-
+    // The store's sendAIMessage handles the optimistic UI update
     try {
       await sendAIMessage(userMessage);
     } catch (error) {
       console.error('Failed to send message:', error);
-      useAppStore.setState(state => ({
-        aiHistory: state.aiHistory.filter(msg => msg.id !== tempId)
-      }));
       alert('Failed to send message: ' + error);
       setMessage(userMessage);
     } finally {
@@ -261,12 +245,17 @@ export default function AIChat() {
                         : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
                     }`}
                   >
-                    <div className={`text-sm prose dark:prose-invert max-w-none ${
-                      msg.role === 'user' 
-                        ? 'text-white prose-headings:text-white prose-strong:text-white' 
-                        : ''
+                    <div className={`text-sm prose prose-sm dark:prose-invert max-w-none 
+                      prose-p:my-2 prose-p:leading-relaxed
+                      prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
+                      prose-ul:my-2 prose-li:my-0.5
+                      prose-strong:font-semibold
+                      prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-gray-200 dark:prose-code:bg-gray-700
+                      ${msg.role === 'user' 
+                        ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' 
+                        : 'prose-p:text-gray-800 dark:prose-p:text-gray-200'
                     }`}>
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                     </div>
                     {/* Token usage for AI responses */}
                     {msg.role === 'assistant' && msg.tokenUsage && (
