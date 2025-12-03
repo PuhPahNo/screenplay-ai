@@ -72,7 +72,8 @@
   "publish": {
     "provider": "github",
     "owner": "PuhPahNo",
-    "repo": "screenplay-ai"
+    "repo": "screenplay-ai",
+    "releaseType": "release"
   },
   "releaseInfo": {
     "releaseNotesFile": "CHANGELOG.md"
