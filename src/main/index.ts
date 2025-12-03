@@ -429,6 +429,8 @@ Date: ${today}
 });
 
 ipcMain.handle('project:open', async (_, projectPath: string) => {
+  console.log('[Main] Opening project:', projectPath);
+  
   if (!fs.existsSync(projectPath)) {
     throw new Error('Project not found');
   }
@@ -436,7 +438,15 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
   projectManager = new ProjectManager(projectPath);
 
   const dbPath = path.join(projectPath, '.screenplay-ai', 'project.db');
-  dbManager = new DatabaseManager(dbPath);
+  console.log('[Main] Initializing database:', dbPath);
+  
+  try {
+    dbManager = new DatabaseManager(dbPath);
+    console.log('[Main] Database initialized successfully');
+  } catch (dbError) {
+    console.error('[Main] Database initialization failed:', dbError);
+    throw dbError;
+  }
 
   // Decrypt and use stored API key
   const encryptedKey = store.get('openaiApiKey_encrypted', '') as string;

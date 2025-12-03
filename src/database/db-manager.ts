@@ -124,17 +124,27 @@ export class DatabaseManager {
   }
 
   private initialize() {
-    // Enable WAL mode for better crash resilience
-    this.db.pragma('journal_mode = WAL');
+    console.log('[DB] Initializing database...');
     
-    // Create tables if they don't exist
-    this.db.exec(SCHEMA);
-    
-    // Run migrations for existing databases
-    this.runMigrations();
-    
-    // Update schema version
-    this.setSchemaVersion(CURRENT_SCHEMA_VERSION);
+    try {
+      // Enable WAL mode for better crash resilience
+      this.db.pragma('journal_mode = WAL');
+      console.log('[DB] WAL mode enabled');
+      
+      // Create tables if they don't exist
+      this.db.exec(SCHEMA);
+      console.log('[DB] Schema executed');
+      
+      // Run migrations for existing databases
+      this.runMigrations();
+      
+      // Update schema version
+      this.setSchemaVersion(CURRENT_SCHEMA_VERSION);
+      console.log('[DB] Initialization complete');
+    } catch (error) {
+      console.error('[DB] Initialization failed:', error);
+      throw error;
+    }
   }
 
   getSchemaVersion(): number {
