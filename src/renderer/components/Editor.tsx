@@ -340,7 +340,10 @@ export default function Editor() {
           <FormattingToolbar
             currentElement={currentElement}
             isLocked={isFormatLocked}
-            onElementChange={setCurrentElement}
+            onElementChange={(type) => {
+              // Use applyFormat to actually change the current line's formatting
+              editorRef.current?.applyFormat(type);
+            }}
             onToggleLock={handleToggleLock}
           />
 

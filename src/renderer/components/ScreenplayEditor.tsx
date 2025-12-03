@@ -21,6 +21,7 @@ interface CursorPosition {
 
 export interface ScreenplayEditorHandle {
   scrollToLine: (lineNumber: number) => void;
+  applyFormat: (type: ElementType) => void;
 }
 
 export interface EditorStatus {
@@ -441,7 +442,7 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
     onCurrentElementChange(nextType);
   };
 
-  // Update formatting when toolbar buttons are clicked
+  // Update formatting when format is locked and element changes
   useEffect(() => {
     if (isFormatLocked) {
       updateCurrentLineFormatting(currentElement);
@@ -469,9 +470,16 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
     }
   }, []);
 
+  // Method to apply a format from toolbar click
+  const applyFormat = useCallback((type: ElementType) => {
+    updateCurrentLineFormatting(type);
+    onCurrentElementChange(type);
+  }, [updateCurrentLineFormatting, onCurrentElementChange]);
+
   useImperativeHandle(ref, () => ({
     scrollToLine,
-  }), [scrollToLine]);
+    applyFormat,
+  }), [scrollToLine, applyFormat]);
 
   // Handle click to update active line
   const handleClick = () => {
