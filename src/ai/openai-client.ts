@@ -289,10 +289,11 @@ export class AIClient {
       });
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages,
         tools,
         tool_choice: 'auto',
+        parallel_tool_calls: true,  // Allow multiple tool calls in one response
         max_completion_tokens: 4000,
       });
 
@@ -587,7 +588,7 @@ export class AIClient {
         }
 
         const secondResponse = await this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           messages,
         });
 
@@ -635,7 +636,7 @@ Arc: ${characterInfo.arc}
       }
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -660,7 +661,7 @@ Arc: ${characterInfo.arc}
   async expandScene(outline: string): Promise<string> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -696,7 +697,7 @@ Arc: ${characterInfo.arc}
         .join('\n\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -761,7 +762,7 @@ Respond in JSON format with this structure:
       const contextLines = lines.slice(-10).join('\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -790,7 +791,7 @@ Respond in JSON format with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -841,7 +842,7 @@ Return a JSON object with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
