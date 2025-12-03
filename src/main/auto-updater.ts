@@ -1,10 +1,11 @@
-import { dialog, BrowserWindow, Notification } from 'electron';
+import { dialog, BrowserWindow, Notification, app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 // Track if user chose auto-restart
 let shouldAutoRestart = false;
 let downloadingVersion = '';
 let lastProgressNotification = 0;
+let isDownloading = false;
 
 export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   // Configure auto-updater
@@ -49,51 +50,43 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
       detail: 'Choose "Download & Restart" for a seamless update experience.',
     };
 
-    dialog.showMessageBox(dialogOpts).then((result) => {
-      if (result.response === 0) {
-        // Download & Restart - auto-restart when download completes
-        shouldAutoRestart = true;
+    dialog.showMessageBox(dialogOpts).then(async (result) => {
+      if (result.response === 0 || result.response === 1) {
+        shouldAutoRestart = result.response === 0;
+        isDownloading = true;
         
-        // Show downloading notification
-        dialog.showMessageBox({
-          type: 'info',
-          buttons: [],
-          title: 'Downloading Update',
-          message: `Downloading v${info.version}...`,
-          detail: 'This may take a few minutes. The app will restart automatically when complete.',
-          noLink: true,
-        });
-        
-        console.log('[AutoUpdater] Starting download (auto-restart)...');
-        autoUpdater.downloadUpdate().catch(err => {
-          console.error('[AutoUpdater] Download failed:', err);
-        });
-        
-        // Notify the renderer about the download
+        // Update window title to show downloading
         if (mainWindow) {
+          mainWindow.setTitle(`Screenplay AI - Downloading v${info.version}...`);
           mainWindow.webContents.send('update-downloading', info.version);
         }
-      } else if (result.response === 1) {
-        // Download only - ask before restart
-        shouldAutoRestart = false;
         
-        // Show downloading notification  
-        dialog.showMessageBox({
-          type: 'info',
-          buttons: [],
-          title: 'Downloading Update',
-          message: `Downloading v${info.version}...`,
-          detail: 'This may take a few minutes. You will be notified when complete.',
-          noLink: true,
-        });
+        // Show system notification that download started
+        if (Notification.isSupported()) {
+          new Notification({
+            title: 'Downloading Update',
+            body: `Downloading v${info.version}... Check the window title for progress.`,
+          }).show();
+        }
         
-        console.log('[AutoUpdater] Starting download (manual restart)...');
-        autoUpdater.downloadUpdate().catch(err => {
+        console.log(`[AutoUpdater] Starting download (${shouldAutoRestart ? 'auto' : 'manual'} restart)...`);
+        
+        try {
+          await autoUpdater.downloadUpdate();
+        } catch (err: any) {
           console.error('[AutoUpdater] Download failed:', err);
-        });
-        
-        if (mainWindow) {
-          mainWindow.webContents.send('update-downloading', info.version);
+          isDownloading = false;
+          
+          if (mainWindow) {
+            mainWindow.setTitle('Screenplay AI');
+          }
+          
+          dialog.showMessageBox({
+            type: 'error',
+            title: 'Download Failed',
+            message: 'Could not download update',
+            detail: err?.message || 'Please check your internet connection and try again.',
+          });
         }
       }
       // response === 2: Not Now - do nothing
@@ -107,12 +100,15 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
 
   // Download progress
   autoUpdater.on('download-progress', (progressObj) => {
-    const percent = progressObj.percent.toFixed(1);
-    const speedMB = (progressObj.bytesPerSecond / (1024 * 1024)).toFixed(2);
+    const percent = Math.round(progressObj.percent);
+    const speedMB = (progressObj.bytesPerSecond / (1024 * 1024)).toFixed(1);
     const downloadedMB = (progressObj.transferred / (1024 * 1024)).toFixed(1);
     const totalMB = (progressObj.total / (1024 * 1024)).toFixed(1);
     
-    console.log(`[AutoUpdater] Download: ${percent}% (${downloadedMB}/${totalMB} MB at ${speedMB} MB/s)`);
+    // Log every 10%
+    if (percent % 10 === 0 || percent === 1) {
+      console.log(`[AutoUpdater] ▓▓▓ ${percent}% (${downloadedMB}/${totalMB} MB @ ${speedMB} MB/s)`);
+    }
     
     // Send progress to renderer
     if (mainWindow) {
@@ -123,33 +119,28 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
         total: progressObj.total,
       });
       
-      // Update window title with progress
-      const originalTitle = mainWindow.getTitle().replace(/ - Downloading.*$/, '');
-      mainWindow.setTitle(`${originalTitle} - Downloading ${percent}%`);
-    }
-    
-    // Show system notification every 25%
-    const now = Date.now();
-    if (now - lastProgressNotification > 5000 && Math.floor(progressObj.percent / 25) > Math.floor((progressObj.percent - 1) / 25)) {
-      lastProgressNotification = now;
-      if (Notification.isSupported()) {
-        new Notification({
-          title: 'Update Downloading',
-          body: `${percent}% complete (${downloadedMB}/${totalMB} MB)`,
-          silent: true,
-        }).show();
-      }
+      // Update window title with progress bar
+      const progressBar = '█'.repeat(Math.floor(percent / 10)) + '░'.repeat(10 - Math.floor(percent / 10));
+      mainWindow.setTitle(`Screenplay AI - Updating [${progressBar}] ${percent}%`);
     }
   });
 
   // Update downloaded
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('[AutoUpdater] Download complete:', info.version);
+    console.log('[AutoUpdater] ✓ Download complete:', info.version);
+    isDownloading = false;
     
     // Reset window title
     if (mainWindow) {
-      const originalTitle = mainWindow.getTitle().replace(/ - Downloading.*$/, '');
-      mainWindow.setTitle(originalTitle);
+      mainWindow.setTitle('Screenplay AI - Update Ready!');
+    }
+    
+    // Show system notification
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Update Ready!',
+        body: `v${info.version} downloaded. ${shouldAutoRestart ? 'Restarting...' : 'Restart to apply.'}`,
+      }).show();
     }
     
     if (shouldAutoRestart) {
@@ -162,7 +153,9 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
         detail: 'Click to restart and apply the update.',
       }).then(() => {
         console.log('[AutoUpdater] Quitting and installing...');
-        autoUpdater.quitAndInstall(false, true);
+        setImmediate(() => {
+          autoUpdater.quitAndInstall(false, true);
+        });
       });
     } else {
       // Manual restart: ask user
@@ -178,9 +171,14 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
       dialog.showMessageBox(dialogOpts).then((result) => {
         if (result.response === 0) {
           console.log('[AutoUpdater] User chose restart now');
-          autoUpdater.quitAndInstall(false, true);
+          setImmediate(() => {
+            autoUpdater.quitAndInstall(false, true);
+          });
         } else {
           console.log('[AutoUpdater] User chose to restart later');
+          if (mainWindow) {
+            mainWindow.setTitle('Screenplay AI');
+          }
         }
       });
     }
@@ -188,13 +186,21 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
 
   // Error
   autoUpdater.on('error', (err) => {
-    console.error('[AutoUpdater] Error:', err);
+    console.error('[AutoUpdater] ✗ Error:', err);
     shouldAutoRestart = false;
+    isDownloading = false;
     
     // Reset window title
     if (mainWindow) {
-      const originalTitle = mainWindow.getTitle().replace(/ - Downloading.*$/, '');
-      mainWindow.setTitle(originalTitle);
+      mainWindow.setTitle('Screenplay AI');
+    }
+    
+    // Show system notification
+    if (Notification.isSupported()) {
+      new Notification({
+        title: 'Update Failed',
+        body: 'Could not download update. Check console for details.',
+      }).show();
     }
     
     dialog.showMessageBox({
