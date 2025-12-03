@@ -160,12 +160,9 @@ export class DatabaseManager {
     const startVersion = this.getSchemaVersion();
     console.log(`[DB] Current schema version: ${startVersion}, target: ${CURRENT_SCHEMA_VERSION}`);
     
-    if (startVersion >= CURRENT_SCHEMA_VERSION) {
-      console.log('[DB] Database is up to date, no migrations needed');
-      return;
-    }
-    
-    console.log('[DB] Running database migrations...');
+    // ALWAYS check for missing columns, even if version seems up-to-date
+    // This handles cases where migrations failed partway through
+    console.log('[DB] Checking database structure...');
     
     try {
       // First, ensure conversations table exists (for older databases)
@@ -183,6 +180,25 @@ export class DatabaseManager {
           )
         `);
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at)');
+      }
+
+      // Check ai_history table exists
+      const aiHistoryTables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_history'").all();
+      if (aiHistoryTables.length === 0) {
+        console.log('[DB] Migration: Creating ai_history table');
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS ai_history (
+            id TEXT PRIMARY KEY,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            context_used TEXT,
+            conversation_id TEXT,
+            token_usage TEXT
+          )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_ai_history_timestamp ON ai_history(timestamp)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_ai_history_conversation ON ai_history(conversation_id)');
       }
 
       // Migration 1: Add conversation_id to ai_history if it doesn't exist
@@ -211,6 +227,8 @@ export class DatabaseManager {
           
           console.log(`[DB] Migration: Moved ${existingMessages.length} messages to default conversation`);
         }
+      } else {
+        console.log('[DB] ✓ ai_history.conversation_id exists');
       }
 
       // Migration 2: Add token_usage to ai_history if it doesn't exist
@@ -220,6 +238,8 @@ export class DatabaseManager {
       if (!hasTokenUsage) {
         console.log('[DB] Migration: Adding token_usage to ai_history');
         this.db.exec('ALTER TABLE ai_history ADD COLUMN token_usage TEXT');
+      } else {
+        console.log('[DB] ✓ ai_history.token_usage exists');
       }
 
       // Migration 3: Add context_summary and total_tokens_used to conversations
@@ -230,10 +250,14 @@ export class DatabaseManager {
       if (!hasContextSummary) {
         console.log('[DB] Migration: Adding context_summary to conversations');
         this.db.exec('ALTER TABLE conversations ADD COLUMN context_summary TEXT');
+      } else {
+        console.log('[DB] ✓ conversations.context_summary exists');
       }
       if (!hasTotalTokens) {
         console.log('[DB] Migration: Adding total_tokens_used to conversations');
         this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
+      } else {
+        console.log('[DB] ✓ conversations.total_tokens_used exists');
       }
 
       // Migration 4: Create versions table if it doesn't exist
@@ -251,9 +275,11 @@ export class DatabaseManager {
           )
         `);
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_versions_created ON versions(created_at)');
+      } else {
+        console.log('[DB] ✓ versions table exists');
       }
       
-      console.log(`[DB] Migrations completed: ${startVersion} → ${CURRENT_SCHEMA_VERSION}`);
+      console.log(`[DB] ✓ Database structure verified (schema v${CURRENT_SCHEMA_VERSION})`);
     } catch (error) {
       console.error('[DB] Migration error:', error);
       throw error;
