@@ -77,6 +77,23 @@ export interface SummarizationResult {
   preservedMessageCount: number;
 }
 
+// Version control types
+export interface Version {
+  id: string;
+  message: string;
+  content: string;
+  createdAt: number;
+  scenesSnapshot: Scene[];
+  charactersSnapshot: Character[];
+}
+
+export interface VersionSummary {
+  id: string;
+  message: string;
+  createdAt: number;
+  contentLength: number;
+}
+
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -194,6 +211,22 @@ export interface ParsedScreenplay {
   author?: string;
 }
 
+// Backup info type
+export interface BackupInfo {
+  filename: string;
+  path: string;
+  timestamp: number;
+  size: number;
+}
+
+// Export options type
+export interface ExportOptions {
+  title?: string;
+  author?: string;
+  includeSceneNumbers?: boolean;
+  includeCharacterList?: boolean;
+}
+
 // Window API exposed to renderer
 export interface WindowAPI {
   project: {
@@ -202,6 +235,7 @@ export interface WindowAPI {
     close: () => Promise<void>;
     save: (content: string) => Promise<void>;
     load: () => Promise<string>;
+    saveAs: () => Promise<string | null>;
   };
 
   db: {
@@ -253,6 +287,34 @@ export interface WindowAPI {
 
   parse: {
     fountain: (content: string) => Promise<ParsedScreenplay>;
+  };
+
+  // Version control
+  version: {
+    create: (message: string) => Promise<Version>;
+    list: () => Promise<VersionSummary[]>;
+    get: (id: string) => Promise<Version | null>;
+    restore: (id: string) => Promise<void>;
+    delete: (id: string) => Promise<void>;
+    count: () => Promise<number>;
+  };
+
+  // Backup system
+  backup: {
+    create: (reason?: string) => Promise<BackupInfo>;
+    list: () => Promise<BackupInfo[]>;
+    restore: (backupPath: string) => Promise<void>;
+    delete: (backupPath: string) => Promise<void>;
+    getDir: () => Promise<string | null>;
+  };
+
+  // Export system
+  export: {
+    fountain: (outputPath: string, options?: ExportOptions) => Promise<string>;
+    pdf: (outputPath: string, options?: ExportOptions) => Promise<string>;
+    fdx: (outputPath: string, options?: ExportOptions) => Promise<string>;
+    txt: (outputPath: string, options?: ExportOptions) => Promise<string>;
+    showSaveDialog: (format: string, defaultName?: string) => Promise<string | null>;
   };
 
   on: (channel: string, callback: (...args: any[]) => void) => void;

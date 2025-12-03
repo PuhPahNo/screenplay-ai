@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from './store/app-store';
 import WelcomeScreen from './components/WelcomeScreen';
 import Editor from './components/Editor';
@@ -6,9 +6,11 @@ import SettingsModal from './components/SettingsModal';
 import ExportModal from './components/ExportModal';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import AnalyzePromptModal from './components/AnalyzePromptModal';
+import VersionHistory from './components/VersionHistory';
 
 function App() {
   const { currentProject, isSettingsOpen, showExportModal, showAnalyzePrompt, setShowExportModal, loadGlobalSettings } = useAppStore();
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   useEffect(() => {
     // Load global settings on startup
@@ -25,6 +27,50 @@ function App() {
 
     window.api.on('menu:save', () => {
       useAppStore.getState().saveScreenplay();
+    });
+
+    window.api.on('menu:save-as', async () => {
+      const newPath = await window.api.project.saveAs();
+      if (newPath) {
+        alert(`Project saved to: ${newPath}`);
+      }
+    });
+
+    window.api.on('menu:version-history', () => {
+      setShowVersionHistory(true);
+    });
+
+    window.api.on('menu:create-version', async () => {
+      const message = prompt('Enter a version message (e.g., "Completed Act 1"):');
+      if (message) {
+        try {
+          await window.api.version.create(message);
+          alert('Version created successfully!');
+        } catch (error) {
+          alert('Failed to create version');
+        }
+      }
+    });
+
+    window.api.on('menu:export', async (format: string) => {
+      try {
+        const outputPath = await window.api.export.showSaveDialog(format);
+        if (outputPath) {
+          if (format === 'fountain') {
+            await window.api.export.fountain(outputPath);
+          } else if (format === 'pdf') {
+            await window.api.export.pdf(outputPath);
+          } else if (format === 'fdx') {
+            await window.api.export.fdx(outputPath);
+          } else if (format === 'txt') {
+            await window.api.export.txt(outputPath);
+          }
+          alert(`Exported successfully to: ${outputPath}`);
+        }
+      } catch (error) {
+        console.error('Export failed:', error);
+        alert('Export failed');
+      }
     });
 
     window.api.on('menu:toggle-ai-chat', () => {
@@ -52,6 +98,10 @@ function App() {
       window.api.off('menu:new-project', () => { });
       window.api.off('menu:open-project', () => { });
       window.api.off('menu:save', () => { });
+      window.api.off('menu:save-as', () => { });
+      window.api.off('menu:version-history', () => { });
+      window.api.off('menu:create-version', () => { });
+      window.api.off('menu:export', () => { });
       window.api.off('menu:toggle-ai-chat', () => { });
       window.api.off('menu:analyze-storyline', () => { });
       window.api.off('menu:open-settings', () => { });
@@ -88,6 +138,7 @@ function App() {
       {isSettingsOpen && <SettingsModal />}
       {showExportModal && <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} />}
       {showAnalyzePrompt && <AnalyzePromptModal />}
+      <VersionHistory isOpen={showVersionHistory} onClose={() => setShowVersionHistory(false)} />
     </div>
   );
 }

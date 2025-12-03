@@ -8,6 +8,7 @@ const api: WindowAPI = {
     close: () => ipcRenderer.invoke('project:close'),
     save: (content: string) => ipcRenderer.invoke('project:save', content),
     load: () => ipcRenderer.invoke('project:load'),
+    saveAs: () => ipcRenderer.invoke('project:saveAs'),
   },
   
   db: {
@@ -64,6 +65,35 @@ const api: WindowAPI = {
   
   parse: {
     fountain: (content: string) => ipcRenderer.invoke('parse:fountain', content),
+  },
+  
+  // Version control
+  version: {
+    create: (message: string) => ipcRenderer.invoke('version:create', message),
+    list: () => ipcRenderer.invoke('version:list'),
+    get: (id: string) => ipcRenderer.invoke('version:get', id),
+    restore: (id: string) => ipcRenderer.invoke('version:restore', id),
+    delete: (id: string) => ipcRenderer.invoke('version:delete', id),
+    count: () => ipcRenderer.invoke('version:count'),
+  },
+  
+  // Backup system
+  backup: {
+    create: (reason?: string) => ipcRenderer.invoke('backup:create', reason),
+    list: () => ipcRenderer.invoke('backup:list'),
+    restore: (backupPath: string) => ipcRenderer.invoke('backup:restore', backupPath),
+    delete: (backupPath: string) => ipcRenderer.invoke('backup:delete', backupPath),
+    getDir: () => ipcRenderer.invoke('backup:getDir'),
+  },
+  
+  // Export system
+  export: {
+    fountain: (outputPath: string, options?: any) => ipcRenderer.invoke('export:fountain', outputPath, options),
+    pdf: (outputPath: string, options?: any) => ipcRenderer.invoke('export:pdf', outputPath, options),
+    fdx: (outputPath: string, options?: any) => ipcRenderer.invoke('export:fdx', outputPath, options),
+    txt: (outputPath: string, options?: any) => ipcRenderer.invoke('export:txt', outputPath, options),
+    showSaveDialog: (format: string, defaultName?: string) => 
+      ipcRenderer.invoke('export:showSaveDialog', format, defaultName),
   },
   
   on: (channel: string, callback: (...args: any[]) => void) => {

@@ -6,6 +6,8 @@ import { DatabaseManager } from '../database/db-manager';
 import { AIClient } from '../ai/openai-client';
 import { FountainParser } from '../screenplay/fountain-parser';
 import { setupAutoUpdater, checkForUpdatesManually } from './auto-updater';
+import { BackupManager } from './backup-manager';
+import { ExportManager } from './export-manager';
 import Store from 'electron-store';
 import type { SystemActions } from '../shared/types';
 
@@ -13,6 +15,8 @@ let mainWindow: BrowserWindow | null = null;
 let projectManager: ProjectManager | null = null;
 let dbManager: DatabaseManager | null = null;
 let aiClient: AIClient | null = null;
+let backupManager: BackupManager | null = null;
+const exportManager = new ExportManager();
 const store = new Store();
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -107,12 +111,56 @@ function createMenu() {
             mainWindow?.webContents.send('menu:save');
           },
         },
+        {
+          label: 'Save As...',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => {
+            mainWindow?.webContents.send('menu:save-as');
+          },
+        },
         { type: 'separator' },
         {
-          label: 'Export as PDF',
+          label: 'Version History...',
+          accelerator: 'CmdOrCtrl+H',
           click: () => {
-            mainWindow?.webContents.send('menu:export-pdf');
+            mainWindow?.webContents.send('menu:version-history');
           },
+        },
+        {
+          label: 'Create Version',
+          click: () => {
+            mainWindow?.webContents.send('menu:create-version');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Export',
+          submenu: [
+            {
+              label: 'Export as Fountain (.fountain)',
+              click: () => {
+                mainWindow?.webContents.send('menu:export', 'fountain');
+              },
+            },
+            {
+              label: 'Export as PDF',
+              click: () => {
+                mainWindow?.webContents.send('menu:export', 'pdf');
+              },
+            },
+            {
+              label: 'Export as Final Draft (.fdx)',
+              click: () => {
+                mainWindow?.webContents.send('menu:export', 'fdx');
+              },
+            },
+            {
+              label: 'Export as Plain Text (.txt)',
+              click: () => {
+                mainWindow?.webContents.send('menu:export', 'txt');
+              },
+            },
+          ],
         },
         ...(!isMac ? [
           { type: 'separator' },
@@ -444,6 +492,11 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
     createdAt: Date.now(),
   };
 
+  // Initialize backup manager and start auto-backup
+  const dbPath = path.join(projectPath, '.screenplay-ai', 'project.db');
+  backupManager = new BackupManager(dbPath);
+  backupManager.startAutoBackup();
+
   // Update recent projects
   const recent = (store.get('recentProjects', []) as string[]);
   const filtered = recent.filter(p => p !== projectPath);
@@ -454,6 +507,11 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
 });
 
 ipcMain.handle('project:close', async () => {
+  // Stop auto-backup when closing project
+  if (backupManager) {
+    backupManager.stopAutoBackup();
+    backupManager = null;
+  }
   projectManager = null;
   dbManager = null;
   aiClient = null;
@@ -757,5 +815,171 @@ ipcMain.handle('file:saveDialog', async (_, defaultPath: string, filters: any[])
 // Parsing
 ipcMain.handle('parse:fountain', async (_, content: string) => {
   return FountainParser.parse(content);
+});
+
+// ============================================
+// VERSION CONTROL
+// ============================================
+
+ipcMain.handle('version:create', async (_, message: string) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  // Also create a backup when creating a version
+  if (backupManager) {
+    await backupManager.createBackup('version');
+  }
+  
+  return await dbManager.createVersion(message);
+});
+
+ipcMain.handle('version:list', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getVersions();
+});
+
+ipcMain.handle('version:get', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getVersion(id);
+});
+
+ipcMain.handle('version:restore', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  // Create backup before restore
+  if (backupManager) {
+    await backupManager.createBackup('pre-restore');
+  }
+  
+  return await dbManager.restoreVersion(id);
+});
+
+ipcMain.handle('version:delete', async (_, id: string) => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.deleteVersion(id);
+});
+
+ipcMain.handle('version:count', async () => {
+  if (!dbManager) throw new Error('No database open');
+  return await dbManager.getVersionCount();
+});
+
+// ============================================
+// BACKUP SYSTEM
+// ============================================
+
+ipcMain.handle('backup:create', async (_, reason?: string) => {
+  if (!backupManager) throw new Error('No project open');
+  return await backupManager.createBackup(reason || 'manual');
+});
+
+ipcMain.handle('backup:list', async () => {
+  if (!backupManager) throw new Error('No project open');
+  return await backupManager.listBackups();
+});
+
+ipcMain.handle('backup:restore', async (_, backupPath: string) => {
+  if (!backupManager) throw new Error('No project open');
+  return await backupManager.restoreBackup(backupPath);
+});
+
+ipcMain.handle('backup:delete', async (_, backupPath: string) => {
+  if (!backupManager) throw new Error('No project open');
+  return await backupManager.deleteBackup(backupPath);
+});
+
+ipcMain.handle('backup:getDir', async () => {
+  if (!backupManager) return null;
+  return backupManager.getBackupDir();
+});
+
+// ============================================
+// EXPORT SYSTEM
+// ============================================
+
+ipcMain.handle('export:fountain', async (_, outputPath: string, options?: any) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  const scenes = await dbManager.getScenes();
+  const characters = await dbManager.getCharacters();
+  
+  await exportManager.exportToFountain(scenes, characters, outputPath, options);
+  return outputPath;
+});
+
+ipcMain.handle('export:pdf', async (_, outputPath: string, options?: any) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  const scenes = await dbManager.getScenes();
+  const characters = await dbManager.getCharacters();
+  
+  await exportManager.exportToPDF(scenes, characters, outputPath, options);
+  return outputPath;
+});
+
+ipcMain.handle('export:fdx', async (_, outputPath: string, options?: any) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  const scenes = await dbManager.getScenes();
+  const characters = await dbManager.getCharacters();
+  
+  await exportManager.exportToFinalDraft(scenes, characters, outputPath, options);
+  return outputPath;
+});
+
+ipcMain.handle('export:txt', async (_, outputPath: string, options?: any) => {
+  if (!dbManager) throw new Error('No database open');
+  
+  const scenes = await dbManager.getScenes();
+  const characters = await dbManager.getCharacters();
+  
+  await exportManager.exportToText(scenes, characters, outputPath, options);
+  return outputPath;
+});
+
+ipcMain.handle('export:showSaveDialog', async (_, format: string, defaultName?: string) => {
+  const filters: { name: string; extensions: string[] }[] = [];
+  
+  switch (format) {
+    case 'fountain':
+      filters.push({ name: 'Fountain', extensions: ['fountain'] });
+      break;
+    case 'pdf':
+      filters.push({ name: 'PDF', extensions: ['pdf'] });
+      break;
+    case 'fdx':
+      filters.push({ name: 'Final Draft', extensions: ['fdx'] });
+      break;
+    case 'txt':
+      filters.push({ name: 'Text', extensions: ['txt'] });
+      break;
+  }
+  
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    defaultPath: defaultName || `screenplay.${format}`,
+    filters,
+  });
+  
+  return result.canceled ? null : result.filePath;
+});
+
+// ============================================
+// SAVE AS
+// ============================================
+
+ipcMain.handle('project:saveAs', async () => {
+  if (!projectManager) throw new Error('No project open');
+  
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    defaultPath: 'screenplay.screenplay',
+    filters: [{ name: 'Screenplay', extensions: ['screenplay'] }],
+  });
+  
+  if (result.canceled || !result.filePath) return null;
+  
+  // Copy current project to new location
+  const currentPath = projectManager['projectPath'];
+  fs.copyFileSync(currentPath, result.filePath);
+  
+  return result.filePath;
 });
 

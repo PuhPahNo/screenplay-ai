@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import type { Character, Scene, Storyline, AIMessage, Conversation } from '../shared/types';
+import type { Character, Scene, Storyline, AIMessage, Conversation, Version, VersionSummary } from '../shared/types';
 
 // Current schema version - increment when making breaking changes
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 -- Schema version tracking
@@ -89,6 +89,16 @@ CREATE TABLE IF NOT EXISTS ai_history (
   token_usage TEXT
 );
 
+-- Versions table (screenplay version control)
+CREATE TABLE IF NOT EXISTS versions (
+  id TEXT PRIMARY KEY,
+  message TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  scenes_snapshot TEXT,
+  characters_snapshot TEXT
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_scenes_number ON scenes(number);
 CREATE INDEX IF NOT EXISTS idx_scenes_order ON scenes(scene_order);
@@ -96,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_history_timestamp ON ai_history(timestamp);
 CREATE INDEX IF NOT EXISTS idx_ai_history_conversation ON ai_history(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_context_type ON ai_memory(context_type);
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
+CREATE INDEX IF NOT EXISTS idx_versions_created ON versions(created_at);
 `;
 
 export class DatabaseManager {
@@ -113,6 +124,9 @@ export class DatabaseManager {
   }
 
   private initialize() {
+    // Enable WAL mode for better crash resilience
+    this.db.pragma('journal_mode = WAL');
+    
     // Create tables if they don't exist
     this.db.exec(SCHEMA);
     
@@ -220,6 +234,23 @@ export class DatabaseManager {
       if (!hasTotalTokens) {
         console.log('[DB] Migration: Adding total_tokens_used to conversations');
         this.db.exec('ALTER TABLE conversations ADD COLUMN total_tokens_used INTEGER DEFAULT 0');
+      }
+
+      // Migration 4: Create versions table if it doesn't exist
+      const versionsTables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='versions'").all();
+      if (versionsTables.length === 0) {
+        console.log('[DB] Migration: Creating versions table');
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS versions (
+            id TEXT PRIMARY KEY,
+            message TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            scenes_snapshot TEXT,
+            characters_snapshot TEXT
+          )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_versions_created ON versions(created_at)');
       }
       
       console.log(`[DB] Migrations completed: ${startVersion} → ${CURRENT_SCHEMA_VERSION}`);
@@ -573,6 +604,98 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM ai_history').run();
     this.db.prepare('DELETE FROM ai_memory').run();
     this.db.prepare('DELETE FROM conversations').run();
+  }
+
+  // Version control operations
+  async createVersion(message: string): Promise<Version> {
+    const id = 'ver-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+    
+    // Get current screenplay content
+    const scenes = await this.getScenes();
+    const characters = await this.getCharacters();
+    const content = scenes.map(s => s.content).join('\n\n');
+    
+    this.db.prepare(`
+      INSERT INTO versions (id, message, content, created_at, scenes_snapshot, characters_snapshot)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      message,
+      content,
+      now,
+      JSON.stringify(scenes),
+      JSON.stringify(characters)
+    );
+    
+    return {
+      id,
+      message,
+      content,
+      createdAt: now,
+      scenesSnapshot: scenes,
+      charactersSnapshot: characters,
+    };
+  }
+
+  async getVersions(): Promise<VersionSummary[]> {
+    const rows = this.db.prepare(
+      'SELECT id, message, created_at, LENGTH(content) as content_length FROM versions ORDER BY created_at DESC'
+    ).all();
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      message: row.message,
+      createdAt: row.created_at,
+      contentLength: row.content_length,
+    }));
+  }
+
+  async getVersion(id: string): Promise<Version | null> {
+    const row = this.db.prepare('SELECT * FROM versions WHERE id = ?').get(id) as any;
+    
+    if (!row) return null;
+    
+    return {
+      id: row.id,
+      message: row.message,
+      content: row.content,
+      createdAt: row.created_at,
+      scenesSnapshot: row.scenes_snapshot ? JSON.parse(row.scenes_snapshot) : [],
+      charactersSnapshot: row.characters_snapshot ? JSON.parse(row.characters_snapshot) : [],
+    };
+  }
+
+  async restoreVersion(id: string): Promise<void> {
+    const version = await this.getVersion(id);
+    if (!version) throw new Error('Version not found');
+    
+    // Clear current data
+    this.db.prepare('DELETE FROM scenes').run();
+    this.db.prepare('DELETE FROM characters').run();
+    
+    // Restore scenes
+    if (version.scenesSnapshot) {
+      for (const scene of version.scenesSnapshot) {
+        await this.saveScene(scene);
+      }
+    }
+    
+    // Restore characters
+    if (version.charactersSnapshot) {
+      for (const char of version.charactersSnapshot) {
+        await this.saveCharacter(char);
+      }
+    }
+  }
+
+  async deleteVersion(id: string): Promise<void> {
+    this.db.prepare('DELETE FROM versions WHERE id = ?').run(id);
+  }
+
+  async getVersionCount(): Promise<number> {
+    const result = this.db.prepare('SELECT COUNT(*) as count FROM versions').get() as any;
+    return result?.count || 0;
   }
 
   close() {
