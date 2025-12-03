@@ -73,13 +73,45 @@ export class AIClient {
           type: 'function',
           function: {
             name: 'delete_character',
-            description: 'Delete a character from the database.',
+            description: 'Delete a character from the database by ID.',
             parameters: {
               type: 'object',
               properties: {
                 id: { type: 'string', description: 'ID of the character to delete' }
               },
               required: ['id']
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'delete_character_by_name',
+            description: 'Delete a character from the database by name. Use this when the user asks to delete a character by name.',
+            parameters: {
+              type: 'object',
+              properties: {
+                character_name: { type: 'string', description: 'Name of the character to delete (case-insensitive)' }
+              },
+              required: ['character_name']
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'delete_characters_batch',
+            description: 'Delete multiple characters at once by name. Use this when the user asks to delete multiple characters.',
+            parameters: {
+              type: 'object',
+              properties: {
+                character_names: { 
+                  type: 'array', 
+                  items: { type: 'string' },
+                  description: 'Array of character names to delete' 
+                }
+              },
+              required: ['character_names']
             }
           }
         },
@@ -257,7 +289,7 @@ export class AIClient {
       });
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages,
         tools,
         tool_choice: 'auto',
@@ -318,6 +350,47 @@ export class AIClient {
               case 'delete_character':
                 await this.dbManager.deleteCharacter(args.id);
                 result = `Successfully deleted character with ID: ${args.id}`;
+                this.systemActions?.notifyUpdate();
+                break;
+
+              case 'delete_character_by_name':
+                const charsToSearch = await this.dbManager.getCharacters();
+                const charToDelete = charsToSearch.find(c => 
+                  c.name.toLowerCase() === args.character_name.toLowerCase()
+                );
+                if (charToDelete) {
+                  await this.dbManager.deleteCharacter(charToDelete.id);
+                  result = `✓ Deleted character: **${charToDelete.name}**`;
+                  this.systemActions?.notifyUpdate();
+                } else {
+                  result = `✗ Character not found: "${args.character_name}"`;
+                }
+                break;
+
+              case 'delete_characters_batch':
+                const allCharsForBatch = await this.dbManager.getCharacters();
+                const deleted: string[] = [];
+                const notFound: string[] = [];
+                
+                for (const name of args.character_names) {
+                  const match = allCharsForBatch.find(c => 
+                    c.name.toLowerCase() === name.toLowerCase()
+                  );
+                  if (match) {
+                    await this.dbManager.deleteCharacter(match.id);
+                    deleted.push(match.name);
+                  } else {
+                    notFound.push(name);
+                  }
+                }
+                
+                result = `**Batch Delete Results:**\n\n`;
+                if (deleted.length > 0) {
+                  result += `✓ **Deleted (${deleted.length}):**\n${deleted.map(n => `  - ${n}`).join('\n')}\n\n`;
+                }
+                if (notFound.length > 0) {
+                  result += `✗ **Not Found (${notFound.length}):**\n${notFound.map(n => `  - ${n}`).join('\n')}`;
+                }
                 this.systemActions?.notifyUpdate();
                 break;
 
@@ -514,7 +587,7 @@ export class AIClient {
         }
 
         const secondResponse = await this.openai.chat.completions.create({
-          model: 'gpt-5-mini',
+          model: 'gpt-4o-mini',
           messages,
         });
 
@@ -562,7 +635,7 @@ Arc: ${characterInfo.arc}
       }
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -587,7 +660,7 @@ Arc: ${characterInfo.arc}
   async expandScene(outline: string): Promise<string> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -623,7 +696,7 @@ Arc: ${characterInfo.arc}
         .join('\n\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -688,7 +761,7 @@ Respond in JSON format with this structure:
       const contextLines = lines.slice(-10).join('\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -717,7 +790,7 @@ Respond in JSON format with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -768,7 +841,7 @@ Return a JSON object with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
