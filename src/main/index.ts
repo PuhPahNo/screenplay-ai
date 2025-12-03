@@ -691,11 +691,11 @@ ipcMain.handle('db:saveConversationSummary', async (_, id: string, summary: stri
 // Summarize conversation
 ipcMain.handle('ai:summarizeConversation', async (_, conversationId: string) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   // Get API key from encrypted storage
   const encryptedApiKey = store.get('openaiApiKey_encrypted', '') as string;
   if (!encryptedApiKey) throw new Error('OpenAI API key not configured');
-  
+
   let decryptedApiKey = '';
   try {
     const keyBuffer = Buffer.from(encryptedApiKey, 'base64');
@@ -703,7 +703,7 @@ ipcMain.handle('ai:summarizeConversation', async (_, conversationId: string) => 
   } catch (err) {
     throw new Error('Failed to decrypt API key');
   }
-  
+
   if (!decryptedApiKey || decryptedApiKey.length < 20) throw new Error('Invalid API key');
 
   const { ContextSummarizer } = await import('../ai/context-summarizer');

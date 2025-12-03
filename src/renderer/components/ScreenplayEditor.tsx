@@ -10,6 +10,7 @@ interface ScreenplayEditorProps {
   isFormatLocked: boolean;
   onCurrentElementChange: (type: ElementType) => void;
   onSave?: () => void;
+  onStatusChange?: (status: EditorStatus) => void;
   theme?: 'light' | 'dark';
 }
 
@@ -22,6 +23,13 @@ export interface ScreenplayEditorHandle {
   scrollToLine: (lineNumber: number) => void;
 }
 
+export interface EditorStatus {
+  elementType: ElementType;
+  lineNumber: number;
+  pageNumber: number;
+  totalPages: number;
+}
+
 const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProps>(({
   value,
   onChange,
@@ -29,11 +37,13 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
   isFormatLocked,
   onCurrentElementChange,
   onSave,
+  onStatusChange,
   theme = 'dark',
 }, ref) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [lineCount, setLineCount] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
+  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const isUpdatingRef = useRef(false);
   const lastValueRef = useRef(value);
 
@@ -245,6 +255,40 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
     return null;
   };
 
+  // Update active line highlighting and report status
+  const updateActiveLine = useCallback(() => {
+    if (!editorRef.current) return;
+
+    const currentLine = getCurrentLine();
+    
+    // Remove active class from all lines
+    const allLines = editorRef.current.querySelectorAll('.screenplay-line.active');
+    allLines.forEach(line => line.classList.remove('active'));
+
+    if (currentLine) {
+      // Add active class to current line
+      currentLine.classList.add('active');
+      
+      const lineIndex = parseInt(currentLine.getAttribute('data-line-index') || '0', 10);
+      const elementType = currentLine.getAttribute('data-element-type') as ElementType || 'action';
+      
+      setActiveLineIndex(lineIndex);
+      
+      // Calculate page info
+      const LINES_PER_PAGE = 55;
+      const pageNumber = Math.max(1, Math.ceil((lineIndex + 1) / LINES_PER_PAGE));
+      const totalPages = Math.max(1, Math.ceil(lineCount / LINES_PER_PAGE));
+      
+      // Report status to parent
+      onStatusChange?.({
+        elementType,
+        lineNumber: lineIndex + 1,
+        pageNumber,
+        totalPages,
+      });
+    }
+  }, [lineCount, onStatusChange]);
+
   const updateCurrentLineFormatting = useCallback((type: ElementType) => {
     const currentLine = getCurrentLine();
     if (!currentLine) return;
@@ -429,6 +473,25 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
     scrollToLine,
   }), [scrollToLine]);
 
+  // Handle click to update active line
+  const handleClick = () => {
+    updateActiveLine();
+  };
+
+  // Handle selection change (for keyboard navigation)
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (editorRef.current?.contains(document.activeElement)) {
+        updateActiveLine();
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [updateActiveLine]);
+
   return (
     <div className={`screenplay-container ${theme === 'dark' ? 'dark' : ''}`}>
       <div className="screenplay-page">
@@ -442,6 +505,7 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
           onInput={handleInput}
           onKeyDown={handleKeyDown}
           onScroll={handleScroll}
+          onClick={handleClick}
           data-placeholder="Start writing your screenplay..."
           suppressContentEditableWarning
         />

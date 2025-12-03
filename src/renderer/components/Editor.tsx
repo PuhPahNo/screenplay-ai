@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/app-store';
 import { Check, X, AlertCircle, Upload, Users, Film, BarChart3, Save, MessageSquare } from 'lucide-react';
-import ScreenplayEditor, { type ScreenplayEditorHandle } from './ScreenplayEditor';
+import ScreenplayEditor, { type ScreenplayEditorHandle, type EditorStatus } from './ScreenplayEditor';
 import FormattingToolbar from './FormattingToolbar';
 import AIChat from './AIChat';
 import CharacterPanel from './CharacterPanel';
@@ -33,6 +33,12 @@ export default function Editor() {
   const [isSaving, setIsSaving] = useState(false);
   const [currentElement, setCurrentElement] = useState<ElementType>('action');
   const [isFormatLocked, setIsFormatLocked] = useState(false);
+  const [editorStatus, setEditorStatus] = useState<EditorStatus>({
+    elementType: 'action',
+    lineNumber: 1,
+    pageNumber: 1,
+    totalPages: 1,
+  });
 
   // Panel sizes
   const [leftPanelWidth, setLeftPanelWidth] = useState(320);
@@ -348,8 +354,22 @@ export default function Editor() {
               isFormatLocked={isFormatLocked}
               onCurrentElementChange={setCurrentElement}
               onSave={handleSave}
+              onStatusChange={setEditorStatus}
               theme={theme}
             />
+          </div>
+
+          {/* Status Bar */}
+          <div className="editor-status-bar">
+            <div className="status-bar-left">
+              <span className={`status-element-type ${editorStatus.elementType}`}>
+                {editorStatus.elementType.replace('-', ' ')}
+              </span>
+              <span>Line {editorStatus.lineNumber}</span>
+            </div>
+            <div className="status-bar-right">
+              <span>Page {editorStatus.pageNumber} of {editorStatus.totalPages}</span>
+            </div>
           </div>
         </div>
 

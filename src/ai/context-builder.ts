@@ -10,7 +10,7 @@ export class ContextBuilder {
 
   buildSystemPrompt(context: AIContext): string {
     const isAgentMode = context.chatMode === 'agent' || context.chatMode === undefined;
-    
+
     const basePrompt = `You are a PROFESSIONAL SCREENPLAY CONSULTANT and SCRIPT DOCTOR with decades of experience in Hollywood. You combine the expertise of:
 - A seasoned STORY EDITOR who has worked on Oscar-winning films
 - A critical SCRIPT ANALYST who evaluates screenplays for major studios

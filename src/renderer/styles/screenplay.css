@@ -219,3 +219,165 @@
 .dark .highlight-line {
   background-color: rgba(59, 130, 246, 0.3);
 }
+
+/* ===== WRITERDUET-STYLE ENHANCEMENTS ===== */
+
+/* Active Line Highlighting */
+.screenplay-line.active {
+  background: rgba(59, 130, 246, 0.06);
+  border-left: 2px solid #3b82f6;
+  margin-left: -2px;
+  padding-left: 2px;
+  transition: background-color 0.15s ease;
+}
+
+.dark .screenplay-line.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-left-color: #60a5fa;
+}
+
+/* Element Type Color Coding */
+.scene-heading {
+  color: #1e40af;
+}
+
+.dark .scene-heading {
+  color: #60a5fa;
+}
+
+.character {
+  color: #7c3aed;
+}
+
+.dark .character {
+  color: #a78bfa;
+}
+
+.parenthetical {
+  color: #6b7280;
+}
+
+.dark .parenthetical {
+  color: #9ca3af;
+}
+
+.transition {
+  color: #059669;
+}
+
+.dark .transition {
+  color: #34d399;
+}
+
+/* Page Indicator */
+.page-indicator {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.page-indicator.visible {
+  opacity: 1;
+}
+
+.dark .page-indicator {
+  background: rgba(255, 255, 255, 0.15);
+  color: #e0e0e0;
+}
+
+/* Status Bar */
+.editor-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #f3f4f6;
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #6b7280;
+}
+
+.dark .editor-status-bar {
+  background: #1f2937;
+  border-top-color: #374151;
+  color: #9ca3af;
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-element-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.dark .status-element-type {
+  background: #374151;
+}
+
+/* Element type indicator colors in status bar */
+.status-element-type.scene-heading {
+  background: rgba(30, 64, 175, 0.15);
+  color: #1e40af;
+}
+
+.status-element-type.character {
+  background: rgba(124, 58, 237, 0.15);
+  color: #7c3aed;
+}
+
+.status-element-type.parenthetical {
+  background: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
+.status-element-type.transition {
+  background: rgba(5, 150, 105, 0.15);
+  color: #059669;
+}
+
+.dark .status-element-type.scene-heading {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+}
+
+.dark .status-element-type.character {
+  background: rgba(167, 139, 250, 0.2);
+  color: #a78bfa;
+}
+
+.dark .status-element-type.parenthetical {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+.dark .status-element-type.transition {
+  background: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+}
