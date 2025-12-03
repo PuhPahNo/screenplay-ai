@@ -157,9 +157,134 @@ export default function AIChat() {
 
   return (
     <div className="h-full flex bg-white dark:bg-dark-surface">
-      {/* Conversation Sidebar */}
+      {/* Main Chat Area - Now on left */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleAIChat}
+              className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+              {currentConversationId 
+                ? conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'
+                : 'AI Assistant'
+              }
+            </h3>
+          </div>
+          {!showSidebar && (
+            <button
+              onClick={() => setShowSidebar(true)}
+              className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              title="Show conversations"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {aiHistory.length === 0 ? (
+            <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
+              <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
+              <p className="text-sm font-medium">Start a conversation</p>
+              <p className="text-xs mt-2 max-w-xs mx-auto">
+                Ask me anything about your screenplay - characters, plot, dialogue, or structure.
+              </p>
+              <div className="mt-6 space-y-2">
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Try asking:</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {[
+                    'Analyze my protagonist',
+                    'Check scene pacing',
+                    'Suggest dialogue',
+                    'Find plot holes',
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => setMessage(suggestion)}
+                      className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-dark-bg hover:bg-gray-200 dark:hover:bg-dark-border rounded-full transition-colors"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            aiHistory
+              .filter((msg) => msg.role !== 'system')
+              .map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      msg.role === 'user'
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
+                    }`}
+                  >
+                    <div className={`text-sm prose dark:prose-invert max-w-none ${
+                      msg.role === 'user' 
+                        ? 'text-white prose-headings:text-white prose-strong:text-white' 
+                        : ''
+                    }`}>
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                    {/* Token usage for AI responses */}
+                    {msg.role === 'assistant' && msg.tokenUsage && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+                        <BarChart3 className="w-3 h-3" />
+                        <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
+                        <span>·</span>
+                        <span>{formatTokens(msg.tokenUsage.completionTokens)} out</span>
+                        <span>·</span>
+                        <span>{formatTokens(msg.tokenUsage.totalTokens)} total</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-gray-200 dark:border-dark-border p-4">
+          <div className="flex gap-2">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about characters, scenes, or storyline..."
+              className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-xl bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none transition-shadow"
+              rows={2}
+              disabled={isSending}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!message.trim() || isSending}
+              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
+            >
+              {isSending ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Conversation Sidebar - Now on right */}
       {showSidebar && (
-        <div className="w-56 border-r border-gray-200 dark:border-dark-border flex flex-col bg-gray-50 dark:bg-dark-bg">
+        <div className="w-56 border-l border-gray-200 dark:border-dark-border flex flex-col bg-gray-50 dark:bg-dark-bg">
           {/* Sidebar Header */}
           <div className="p-3 border-b border-gray-200 dark:border-dark-border">
             <button
@@ -263,139 +388,12 @@ export default function AIChat() {
               onClick={() => setShowSidebar(false)}
               className="w-full flex items-center justify-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             >
-              <ChevronLeft className="w-4 h-4" />
               Hide
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            {!showSidebar && (
-              <button
-                onClick={() => setShowSidebar(true)}
-                className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            )}
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-              {currentConversationId 
-                ? conversations.find(c => c.id === currentConversationId)?.title || 'AI Assistant'
-                : 'AI Assistant'
-              }
-            </h3>
-          </div>
-          <button
-            onClick={toggleAIChat}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {aiHistory.length === 0 ? (
-            <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
-              <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
-              <p className="text-sm font-medium">Start a conversation</p>
-              <p className="text-xs mt-2 max-w-xs mx-auto">
-                Ask me anything about your screenplay - characters, plot, dialogue, or structure.
-              </p>
-              <div className="mt-6 space-y-2">
-                <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Try asking:</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {[
-                    'Analyze my protagonist',
-                    'Check scene pacing',
-                    'Suggest dialogue',
-                    'Find plot holes',
-                  ].map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => setMessage(suggestion)}
-                      className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-dark-bg hover:bg-gray-200 dark:hover:bg-dark-border rounded-full transition-colors"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            aiHistory
-              .filter((msg) => msg.role !== 'system')
-              .map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      msg.role === 'user'
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
-                    }`}
-                  >
-                    <div className={`text-sm prose dark:prose-invert max-w-none ${
-                      msg.role === 'user' 
-                        ? 'text-white prose-headings:text-white prose-strong:text-white' 
-                        : ''
-                    }`}>
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
-                    {/* Token usage for AI responses */}
-                    {msg.role === 'assistant' && msg.tokenUsage && (
-                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                        <BarChart3 className="w-3 h-3" />
-                        <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
-                        <span>·</span>
-                        <span>{formatTokens(msg.tokenUsage.completionTokens)} out</span>
-                        <span>·</span>
-                        <span>{formatTokens(msg.tokenUsage.totalTokens)} total</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-gray-200 dark:border-dark-border p-4">
-          <div className="flex gap-2">
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about characters, scenes, or storyline..."
-              className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-xl bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none transition-shadow"
-              rows={2}
-              disabled={isSending}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!message.trim() || isSending}
-              className="px-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all self-end flex items-center gap-2 shadow-sm hover:shadow-md"
-            >
-              {isSending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </button>
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
-            Enter to send · Shift+Enter for new line
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

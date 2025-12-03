@@ -261,7 +261,6 @@ export class AIClient {
         messages,
         tools,
         tool_choice: 'auto',
-        temperature: 0.7,
         max_completion_tokens: 4000,
       });
 
@@ -517,7 +516,6 @@ export class AIClient {
         const secondResponse = await this.openai.chat.completions.create({
           model: 'gpt-5-mini',
           messages,
-          temperature: 0.7,
         });
 
         // Track token usage from second completion (after tool calls)
@@ -600,7 +598,6 @@ Arc: ${characterInfo.arc}
             content: `Expand this scene outline into a complete screenplay scene:\n\n${outline}`,
           },
         ],
-        temperature: 0.7,
         max_completion_tokens: 6000,
       });
 
@@ -702,7 +699,6 @@ Respond in JSON format with this structure:
             content: `Current screenplay context:\n${contextLines}\n\nSuggest what comes next:`,
           },
         ],
-        temperature: 0.7,
         max_completion_tokens: 150,
       });
 
