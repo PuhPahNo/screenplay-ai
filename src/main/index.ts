@@ -493,7 +493,7 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
   };
 
   // Initialize backup manager and start auto-backup
-  const dbPath = path.join(projectPath, '.screenplay-ai', 'project.db');
+  // Note: dbPath is already defined above
   backupManager = new BackupManager(dbPath);
   backupManager.startAutoBackup();
 
