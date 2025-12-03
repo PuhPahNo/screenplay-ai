@@ -133,6 +133,7 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
     // Reset window title
     if (mainWindow) {
       mainWindow.setTitle('Screenplay AI - Update Ready!');
+      mainWindow.webContents.send('update-downloaded', info);
     }
     
     // Show system notification
@@ -193,6 +194,7 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
     // Reset window title
     if (mainWindow) {
       mainWindow.setTitle('Screenplay AI');
+      mainWindow.webContents.send('update-error', err.message);
     }
     
     // Show system notification

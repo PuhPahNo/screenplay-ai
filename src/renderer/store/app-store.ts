@@ -12,6 +12,18 @@ import type {
   Conversation
 } from '../../shared/types';
 
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+  version?: string;
+  progress?: {
+    percent: number;
+    bytesPerSecond: number;
+    transferred: number;
+    total: number;
+  };
+  error?: string;
+}
+
 interface AppState {
   // Project state
   currentProject: Project | null;
@@ -41,6 +53,7 @@ interface AppState {
   selectedSceneId: string | null;
   activePanel: 'characters' | 'scenes' | 'storyline' | null;
   pendingEdit: PendingEdit | null;
+  updateState: UpdateState;
 
   // Actions
   setCurrentProject: (project: Project | null) => void;
@@ -61,6 +74,7 @@ interface AppState {
   setSelectedSceneId: (id: string | null) => void;
   setActivePanel: (panel: 'characters' | 'scenes' | 'storyline' | null) => void;
   setPendingEdit: (edit: PendingEdit | null) => void;
+  setUpdateState: (state: Partial<UpdateState>) => void;
   applyEdit: () => Promise<void>;
   rejectEdit: () => void;
 
@@ -118,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSceneId: null,
   activePanel: null,
   pendingEdit: null,
+  updateState: { status: 'idle' },
 
   // Setters
   setCurrentProject: (project) => set({ currentProject: project }),
@@ -145,6 +160,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedSceneId: (id) => set({ selectedSceneId: id }),
   setActivePanel: (panel) => set({ activePanel: panel }),
   setPendingEdit: (edit) => set({ pendingEdit: edit }),
+  setUpdateState: (updateState) => set((state) => ({
+    updateState: { ...state.updateState, ...updateState }
+  })),
 
   applyEdit: async () => {
     const { pendingEdit, screenplayContent, saveScreenplay } = get();
