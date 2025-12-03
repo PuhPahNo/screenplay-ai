@@ -28,8 +28,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:mac:release
-        # electron-builder with --publish always handles:
-        # 1. Building the app
-        # 2. Creating GitHub release
-        # 3. Uploading artifacts (dmg, zip)
-        # 4. Generating and uploading latest-mac.yml for auto-updater
+
+      - name: Publish Release (remove draft status)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the tag name from GITHUB_REF (refs/tags/v1.4.5 -> v1.4.5)
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "Publishing release for tag: $TAG_NAME"
+          
+          # Use GitHub CLI to publish the release (removes draft status)
+          gh release edit "$TAG_NAME" --draft=false --repo ${{ github.repository }}
