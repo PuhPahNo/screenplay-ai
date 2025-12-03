@@ -66,7 +66,7 @@ function createMenu() {
             const appVersion = app.getVersion();
             const electronVersion = process.versions.electron;
             const platform = `${process.platform} (${process.arch})`;
-            
+
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
               title: 'About Screenplay AI',
@@ -265,7 +265,7 @@ function createMenu() {
               const appVersion = app.getVersion();
               const electronVersion = process.versions.electron;
               const platform = `${process.platform} (${process.arch})`;
-              
+
               dialog.showMessageBox(mainWindow!, {
                 type: 'info',
                 title: 'About Screenplay AI',
@@ -430,7 +430,7 @@ Date: ${today}
 
 ipcMain.handle('project:open', async (_, projectPath: string) => {
   console.log('[Main] Opening project:', projectPath);
-  
+
   if (!fs.existsSync(projectPath)) {
     throw new Error('Project not found');
   }
@@ -439,7 +439,7 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
 
   const dbPath = path.join(projectPath, '.screenplay-ai', 'project.db');
   console.log('[Main] Initializing database:', dbPath);
-  
+
   try {
     dbManager = new DatabaseManager(dbPath);
     console.log('[Main] Database initialized successfully');
@@ -686,16 +686,16 @@ ipcMain.handle('db:saveConversationSummary', async (_, id: string, summary: stri
 ipcMain.handle('ai:summarizeConversation', async (_, conversationId: string) => {
   if (!dbManager) throw new Error('No database open');
   if (!globalSettings?.openaiApiKey) throw new Error('OpenAI API key not configured');
-  
+
   const { ContextSummarizer } = await import('../ai/context-summarizer');
   const summarizer = new ContextSummarizer(globalSettings.openaiApiKey);
-  
+
   const messages = await dbManager.getAIHistoryForConversation(conversationId);
   const result = await summarizer.summarize(messages);
-  
+
   // Save the summary to the conversation
   await dbManager.saveConversationSummary(conversationId, result.summary);
-  
+
   return result;
 });
 
@@ -833,12 +833,12 @@ ipcMain.handle('parse:fountain', async (_, content: string) => {
 
 ipcMain.handle('version:create', async (_, message: string) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   // Also create a backup when creating a version
   if (backupManager) {
     await backupManager.createBackup('version');
   }
-  
+
   return await dbManager.createVersion(message);
 });
 
@@ -854,12 +854,12 @@ ipcMain.handle('version:get', async (_, id: string) => {
 
 ipcMain.handle('version:restore', async (_, id: string) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   // Create backup before restore
   if (backupManager) {
     await backupManager.createBackup('pre-restore');
   }
-  
+
   return await dbManager.restoreVersion(id);
 });
 
@@ -908,47 +908,47 @@ ipcMain.handle('backup:getDir', async () => {
 
 ipcMain.handle('export:fountain', async (_, outputPath: string, options?: any) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-  
+
   await exportManager.exportToFountain(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:pdf', async (_, outputPath: string, options?: any) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-  
+
   await exportManager.exportToPDF(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:fdx', async (_, outputPath: string, options?: any) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-  
+
   await exportManager.exportToFinalDraft(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:txt', async (_, outputPath: string, options?: any) => {
   if (!dbManager) throw new Error('No database open');
-  
+
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-  
+
   await exportManager.exportToText(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:showSaveDialog', async (_, format: string, defaultName?: string) => {
   const filters: { name: string; extensions: string[] }[] = [];
-  
+
   switch (format) {
     case 'fountain':
       filters.push({ name: 'Fountain', extensions: ['fountain'] });
@@ -963,12 +963,12 @@ ipcMain.handle('export:showSaveDialog', async (_, format: string, defaultName?: 
       filters.push({ name: 'Text', extensions: ['txt'] });
       break;
   }
-  
+
   const result = await dialog.showSaveDialog(mainWindow!, {
     defaultPath: defaultName || `screenplay.${format}`,
     filters,
   });
-  
+
   return result.canceled ? null : result.filePath;
 });
 
@@ -978,18 +978,18 @@ ipcMain.handle('export:showSaveDialog', async (_, format: string, defaultName?: 
 
 ipcMain.handle('project:saveAs', async () => {
   if (!projectManager) throw new Error('No project open');
-  
+
   const result = await dialog.showSaveDialog(mainWindow!, {
     defaultPath: 'screenplay.screenplay',
     filters: [{ name: 'Screenplay', extensions: ['screenplay'] }],
   });
-  
+
   if (result.canceled || !result.filePath) return null;
-  
+
   // Copy current project to new location
   const currentPath = projectManager['projectPath'];
   fs.copyFileSync(currentPath, result.filePath);
-  
+
   return result.filePath;
 });
 

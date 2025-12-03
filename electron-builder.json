@@ -1,6 +1,7 @@
 {
   "appId": "com.screenplay.ai",
   "productName": "Screenplay AI",
+  "artifactName": "${name}-${version}-${arch}-${os}.${ext}",
   "directories": {
     "buildResources": "build",
     "output": "release"
@@ -11,6 +12,7 @@
     "package.json"
   ],
   "mac": {
+    "artifactName": "Screenplay-AI-${version}-${arch}-mac.${ext}",
     "target": [
       {
         "target": "dmg",
