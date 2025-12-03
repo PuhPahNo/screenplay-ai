@@ -1,7 +1,6 @@
 {
   "appId": "com.screenplay.ai",
   "productName": "Screenplay AI",
-  "artifactName": "${name}-${version}-${arch}-${os}.${ext}",
   "directories": {
     "buildResources": "build",
     "output": "release"

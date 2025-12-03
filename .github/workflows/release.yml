@@ -23,42 +23,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        # npm ci runs 'postinstall' automatically, which triggers 'electron-builder install-app-deps'
 
-      - name: Build Electron app (Mac)
+      - name: Build and Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npm run build:mac
-
-      - name: Upload artifacts (Mac)
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-installers
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/latest-mac.yml
-
-  publish:
-    needs: release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: false
-          prerelease: false
-          files: |
-            mac-installers/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:mac:release
+        # electron-builder with --publish always handles:
+        # 1. Building the app
+        # 2. Creating GitHub release
+        # 3. Uploading artifacts (dmg, zip)
+        # 4. Generating and uploading latest-mac.yml for auto-updater

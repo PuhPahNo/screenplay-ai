@@ -1,6 +1,6 @@
 {
   "name": "screenplay-ai",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "AI-powered screenplay writing desktop application",
   "private": true,
   "author": "Screenplay AI",
@@ -14,6 +14,7 @@
     "electron:build": "vite build && electron-builder",
     "electron:rebuild": "electron-rebuild",
     "build:mac": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "build:mac:release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish always",
     "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
