@@ -67,14 +67,14 @@ function App() {
     });
 
     window.api.on('menu:create-version', async () => {
-      const message = prompt('Enter a version message (e.g., "Completed Act 1"):');
-      if (message) {
-        try {
-          await window.api.version.create(message);
-          alert('Version created successfully!');
-        } catch (error) {
-          alert('Failed to create version');
-        }
+      // Use a timestamp-based message since prompt() is not available in Electron
+      const now = new Date();
+      const message = `Version ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+      try {
+        await window.api.version.create(message);
+        console.log('Version created:', message);
+      } catch (error) {
+        console.error('Failed to create version:', error);
       }
     });
 

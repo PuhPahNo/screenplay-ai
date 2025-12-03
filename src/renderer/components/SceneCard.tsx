@@ -1,10 +1,9 @@
-import { GripVertical, Edit, Trash2 } from 'lucide-react';
+import { GripVertical, Trash2 } from 'lucide-react';
 import type { Scene, Character } from '../../shared/types';
 
 interface SceneCardProps {
   scene: Scene;
   characters: Character[];
-  onEdit?: (scene: Scene) => void;
   onDelete?: (scene: Scene) => void;
   onClick?: () => void;
   isDragging?: boolean;
@@ -14,7 +13,6 @@ interface SceneCardProps {
 export default function SceneCard({
   scene,
   characters,
-  onEdit,
   onDelete,
   onClick,
   isDragging = false,
@@ -80,21 +78,9 @@ export default function SceneCard({
           </div>
         </div>
 
-        {/* Action Buttons - Right Side, Visible on Hover */}
-        <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {onEdit && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(scene);
-              }}
-              className="p-1.5 bg-white dark:bg-dark-bg border border-gray-200 dark:border-dark-border rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
-              title="Edit scene"
-            >
-              <Edit className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-            </button>
-          )}
-          {onDelete && (
+        {/* Delete Button - Right Side, Visible on Hover */}
+        {onDelete && (
+          <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -105,8 +91,8 @@ export default function SceneCard({
             >
               <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

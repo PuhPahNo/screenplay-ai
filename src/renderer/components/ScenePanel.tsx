@@ -22,7 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import SceneCard from './SceneCard';
 import type { Scene } from '../../shared/types';
 
-function SortableSceneCard({ scene, characters, onEdit, onDelete, onClick }: any) {
+function SortableSceneCard({ scene, characters, onDelete, onClick }: any) {
   const {
     attributes,
     listeners,
@@ -42,7 +42,6 @@ function SortableSceneCard({ scene, characters, onEdit, onDelete, onClick }: any
       <SceneCard
         scene={scene}
         characters={characters}
-        onEdit={onEdit}
         onDelete={onDelete}
         onClick={onClick}
         isDragging={isDragging}
@@ -99,31 +98,17 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
     }
   };
 
-  const handleEdit = (scene: Scene) => {
-    const newSummary = prompt('Edit scene summary:', scene.summary);
-    if (newSummary !== null) {
-      const updatedScene = { ...scene, summary: newSummary };
-      window.api.db.saveScene(updatedScene).then(() => {
-        const newScenes = scenes.map((s) => (s.id === scene.id ? updatedScene : s));
-        setScenes(newScenes);
-      }).catch((error) => {
-        alert('Failed to update scene: ' + error);
-      });
-    }
-  };
-
   const handleDelete = async (scene: Scene) => {
-    if (confirm(`Delete scene "${scene.heading}"?\n\nThis will remove it from the database but not from your screenplay.`)) {
-      try {
-        // Delete from database
-        await window.api.db.deleteScene(scene.id);
-        
-        // Update local state
-        const newScenes = scenes.filter((s) => s.id !== scene.id);
-        setScenes(newScenes);
-      } catch (error) {
-        alert('Failed to delete scene: ' + error);
-      }
+    // Use window.api.dialog for confirmation since Electron doesn't support confirm()
+    try {
+      // Delete from database
+      await window.api.db.deleteScene(scene.id);
+      
+      // Update local state
+      const newScenes = scenes.filter((s) => s.id !== scene.id);
+      setScenes(newScenes);
+    } catch (error) {
+      console.error('Failed to delete scene:', error);
     }
   };
 
@@ -285,7 +270,6 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
                   key={scene.id}
                   scene={scene}
                   characters={characters}
-                  onEdit={handleEdit}
                   onDelete={handleDelete}
                   onClick={() => handleSceneClick(scene.id)}
                 />

@@ -76,7 +76,7 @@ export default function AIChat() {
 
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false); // Collapsed by default for more chat space
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -284,7 +284,7 @@ export default function AIChat() {
 
       {/* Conversation Sidebar - Now on right */}
       {showSidebar && (
-        <div className="w-56 border-l border-gray-200 dark:border-dark-border flex flex-col bg-gray-50 dark:bg-dark-bg">
+        <div className="w-52 flex-shrink-0 border-l border-gray-200 dark:border-dark-border flex flex-col bg-gray-50 dark:bg-dark-bg">
           {/* Sidebar Header */}
           <div className="p-3 border-b border-gray-200 dark:border-dark-border">
             <button
