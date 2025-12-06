@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/app-store';
-import { Check, X, AlertCircle, Upload, Users, Film, BarChart3, Save, MessageSquare, Sparkles } from 'lucide-react';
+import { Check, X, AlertCircle, Upload, Users, Film, BarChart3, Save, MessageSquare, Sparkles, Loader2 } from 'lucide-react';
 import ScreenplayEditor, { type ScreenplayEditorHandle, type EditorStatus } from './ScreenplayEditor';
 import FormattingToolbar from './FormattingToolbar';
 import AIChat from './AIChat';
@@ -8,7 +8,7 @@ import CharacterPanel from './CharacterPanel';
 import ScenePanel from './ScenePanel';
 import StorylinePanel from './StorylinePanel';
 import AgenticAssistant from './AgenticAssistant';
-import { CleanupReviewModal, type CleanupSuggestion } from './CleanupReviewModal';
+import { CleanupReviewModal, type CleanupSuggestion, type LLMAnalysisResult } from './CleanupReviewModal';
 import type { ElementType } from '../../shared/types';
 
 export default function Editor() {
@@ -45,6 +45,11 @@ export default function Editor() {
     pageNumber: 1,
     totalPages: 1,
   });
+  
+  // Auto-analysis state for new projects
+  const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
+  const [autoAnalysisProgress, setAutoAnalysisProgress] = useState('');
+  const [hasCheckedForNewProject, setHasCheckedForNewProject] = useState(false);
 
   // Panel sizes
   const [leftPanelWidth, setLeftPanelWidth] = useState(320);
@@ -82,6 +87,119 @@ export default function Editor() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingLeft, isResizingRight]);
+
+  // Auto-analyze new projects with LLM
+  useEffect(() => {
+    const checkAndAnalyzeNewProject = async () => {
+      // Only check once per project load
+      if (hasCheckedForNewProject) return;
+      
+      // Need project and screenplay content
+      if (!currentProject || !screenplayContent || screenplayContent.trim().length === 0) return;
+      
+      // Need API key configured
+      if (!globalSettings?.openaiApiKey) {
+        console.log('[Editor] No API key configured, skipping auto-analysis');
+        setHasCheckedForNewProject(true);
+        return;
+      }
+      
+      // Check if this is a "new" project (no characters AND no scenes in database)
+      const isNewProject = characters.length === 0 && scenes.length === 0;
+      
+      console.log('[Editor] Checking for new project:', { 
+        isNew: isNewProject, 
+        characters: characters.length, 
+        scenes: scenes.length,
+        contentLength: screenplayContent.length
+      });
+      
+      setHasCheckedForNewProject(true);
+      
+      if (!isNewProject) {
+        console.log('[Editor] Existing project detected, skipping auto-analysis');
+        return;
+      }
+      
+      // This is a new project - run LLM analysis automatically
+      console.log('[Editor] New project detected, starting auto LLM analysis...');
+      setIsAutoAnalyzing(true);
+      setAutoAnalysisProgress('Initializing AI analysis...');
+      
+      try {
+        setAutoAnalysisProgress('Sending screenplay to AI for analysis...');
+        
+        // Call the LLM analysis
+        const analysis: LLMAnalysisResult = await window.api.ai.analyzeScreenplay(screenplayContent);
+        
+        console.log('[Editor] LLM analysis complete:', {
+          characters: analysis.characters.length,
+          scenes: analysis.scenes.length,
+          duplicates: analysis.duplicates.length
+        });
+        
+        setAutoAnalysisProgress('Saving characters and scenes...');
+        
+        // Save all characters from LLM
+        for (const llmChar of analysis.characters) {
+          const newCharacter = {
+            id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: llmChar.normalizedName.toUpperCase(),
+            description: 'AI-detected character',
+            appearances: [],
+            dialogueCount: llmChar.dialogueCount,
+            firstAppearance: llmChar.firstAppearance,
+            arc: '',
+            age: '',
+            occupation: '',
+            personality: '',
+            backstory: '',
+            goals: '',
+            role: '',
+          };
+          await window.api.db.saveCharacter(newCharacter);
+        }
+        
+        // Save all scenes from LLM
+        for (const llmScene of analysis.scenes) {
+          const newScene = {
+            id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            number: llmScene.number,
+            heading: llmScene.heading.toUpperCase(),
+            content: '',
+            startLine: llmScene.lineNumber,
+            endLine: llmScene.lineNumber,
+            characters: [],
+            summary: '',
+            mood: '',
+            notes: '',
+          };
+          await window.api.db.saveScene(newScene);
+        }
+        
+        // Reload data
+        await loadCharacters();
+        await loadScenes();
+        
+        console.log('[Editor] Auto-analysis complete!');
+        setAutoAnalysisProgress('');
+        
+      } catch (error) {
+        console.error('[Editor] Auto-analysis failed:', error);
+        setAutoAnalysisProgress('');
+        // Don't show error - user can manually trigger cleanup if needed
+      } finally {
+        setIsAutoAnalyzing(false);
+      }
+    };
+    
+    checkAndAnalyzeNewProject();
+  }, [currentProject, screenplayContent, characters.length, scenes.length, globalSettings?.openaiApiKey, hasCheckedForNewProject, loadCharacters, loadScenes]);
+
+  // Reset the check flag when project changes
+  useEffect(() => {
+    setHasCheckedForNewProject(false);
+  }, [currentProject?.path]);
 
   const handleEditorChange = (value: string) => {
     setScreenplayContent(value);
@@ -378,7 +496,33 @@ export default function Editor() {
   const theme = globalSettings?.defaultTheme || 'dark';
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full h-full flex flex-col relative">
+      {/* Auto-Analysis Loading Overlay for New Projects */}
+      {isAutoAnalyzing && (
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-8 max-w-md mx-4 shadow-2xl">
+            <div className="flex flex-col items-center text-center">
+              <div className="relative mb-6">
+                <Sparkles className="w-12 h-12 text-blue-400 animate-pulse" />
+                <Loader2 className="w-6 h-6 text-blue-300 animate-spin absolute -bottom-1 -right-1" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">
+                Analyzing New Screenplay
+              </h3>
+              <p className="text-zinc-400 mb-4">
+                AI is reading your screenplay to accurately identify characters and scenes...
+              </p>
+              <p className="text-sm text-blue-400 font-medium">
+                {autoAnalysisProgress}
+              </p>
+              <p className="text-xs text-zinc-500 mt-4">
+                This only happens once for new projects
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Header - Distinct from content areas */}
       <div className="h-14 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-dark-surface dark:to-dark-bg border-b-2 border-gray-300 dark:border-dark-border flex items-center justify-between px-6 shadow-md">
         <div className="flex items-center gap-4">
