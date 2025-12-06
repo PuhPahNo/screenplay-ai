@@ -134,6 +134,8 @@ export interface SystemActions {
   exportScreenplay: (format: 'pdf' | 'fdx') => Promise<void>;
   notifyUpdate: () => void;
   previewUpdate: (edit: PendingEdit) => void;
+  setScreenplayTitle: (title: string) => void;
+  setScreenplayAuthor: (author: string) => void;
 }
 
 export interface ProjectSettings {

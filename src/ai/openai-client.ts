@@ -187,6 +187,21 @@ export class AIClient {
             }
           }
         },
+        {
+          type: 'function',
+          function: {
+            name: 'set_screenplay_metadata',
+            description: 'Set the screenplay title and/or author. Use this when you detect title page information like "written by", "Author:", or similar.',
+            parameters: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'The screenplay title (optional)' },
+                author: { type: 'string', description: 'The author name (optional)' }
+              },
+              required: []
+            }
+          }
+        },
         // === QUERY TOOLS (Read-only access to screenplay data) ===
         {
           type: 'function',
@@ -404,8 +419,8 @@ export class AIClient {
         messages,
         // Only include tools in agent mode
         ...(isAgentMode && {
-          tools,
-          tool_choice: 'auto',
+        tools,
+        tool_choice: 'auto',
           parallel_tool_calls: true,
         }),
         max_completion_tokens: 4000,
@@ -584,21 +599,21 @@ export class AIClient {
             return `Character "${charName}" already exists - skipping duplicate`;
           }
 
-          const newCharacter = {
-            id: uuidv4(),
+                const newCharacter = {
+                  id: uuidv4(),
             name: charName,
             description: args.description || '',
             age: args.age || '',
             occupation: args.occupation || '',
-            personality: args.personality || '',
-            goals: args.goals || '',
-            arc: '',
-            relationships: {},
-            appearances: [],
+                  personality: args.personality || '',
+                  goals: args.goals || '',
+                  arc: '',
+                  relationships: {},
+                  appearances: [],
             notes: args.role ? `Role: ${args.role}` : '',
-          };
-          await this.dbManager.saveCharacter(newCharacter);
-          this.systemActions?.notifyUpdate();
+                };
+                await this.dbManager.saveCharacter(newCharacter);
+                this.systemActions?.notifyUpdate();
           return `✓ Created character: ${newCharacter.name}`;
         }
 
@@ -637,20 +652,20 @@ export class AIClient {
 
           const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
 
-          const newScene = {
-            id: uuidv4(),
+                const newScene = {
+                  id: uuidv4(),
             number: maxSceneNum + 1,
             heading: sceneHeading,
-            location: '',
-            timeOfDay: '',
-            summary: args.summary || '',
-            characters: args.characters || [],
-            startLine: 0,
-            endLine: 0,
-            content: '',
-          };
-          await this.dbManager.saveScene(newScene);
-          this.systemActions?.notifyUpdate();
+                  location: '',
+                  timeOfDay: '',
+                  summary: args.summary || '',
+                  characters: args.characters || [],
+                  startLine: 0,
+                  endLine: 0,
+                  content: '',
+                };
+                await this.dbManager.saveScene(newScene);
+                this.systemActions?.notifyUpdate();
           return `✓ Created Scene ${newScene.number}: ${newScene.heading}`;
         }
 
@@ -784,8 +799,8 @@ export class AIClient {
         }
 
         case 'delete_scene': {
-          await this.dbManager.deleteScene(args.id);
-          this.systemActions?.notifyUpdate();
+                await this.dbManager.deleteScene(args.id);
+                this.systemActions?.notifyUpdate();
           return `✓ Deleted scene with ID: ${args.id}`;
         }
 
@@ -966,30 +981,52 @@ export class AIClient {
           return result;
         }
 
+        // === METADATA ===
+        case 'set_screenplay_metadata': {
+          const results: string[] = [];
+          if (args.title) {
+            if (this.systemActions) {
+              this.systemActions.setScreenplayTitle(args.title);
+              results.push(`✓ Title set to: "${args.title}"`);
+            }
+          }
+          if (args.author) {
+            if (this.systemActions) {
+              this.systemActions.setScreenplayAuthor(args.author);
+              results.push(`✓ Author set to: "${args.author}"`);
+            }
+          }
+          if (results.length === 0) {
+            return '✗ No title or author provided.';
+          }
+          console.log('[AI] Set screenplay metadata:', args);
+          return results.join('\n');
+        }
+
         // === SYSTEM ACTIONS ===
         case 'save_screenplay': {
-          if (this.systemActions) {
-            await this.systemActions.saveScreenplay();
+                if (this.systemActions) {
+                  await this.systemActions.saveScreenplay();
             return '✓ Screenplay saved successfully.';
-          }
+                }
           return '✗ Save functionality not available.';
         }
 
         case 'export_screenplay': {
-          if (this.systemActions) {
-            await this.systemActions.exportScreenplay(args.format);
+                if (this.systemActions) {
+                  await this.systemActions.exportScreenplay(args.format);
             return `✓ Screenplay exported to ${args.format} successfully.`;
-          }
+                }
           return '✗ Export functionality not available.';
         }
 
         case 'update_content': {
-          if (this.systemActions && this.systemActions.previewUpdate) {
-            this.systemActions.previewUpdate({
-              original: args.original_text,
-              modified: args.new_text,
-              description: args.description
-            });
+                if (this.systemActions && this.systemActions.previewUpdate) {
+                  this.systemActions.previewUpdate({
+                    original: args.original_text,
+                    modified: args.new_text,
+                    description: args.description
+                  });
             return `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
           }
           return '✗ Content update functionality not available.';
@@ -1347,6 +1384,19 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
 
     // Build a focused analysis prompt
     const analysisPrompt = `You are an intelligent screenplay assistant. Carefully analyze this Fountain-format screenplay and perform these actions IN ORDER:
+
+**STEP 0 - Extract Title Page Information:**
+Look at the VERY BEGINNING of the screenplay for title page information:
+- Find the screenplay TITLE (usually on the first line or after "Title:")
+- Find the AUTHOR (look for "written by", "by", "Author:", or similar phrases)
+
+IMMEDIATELY call set_screenplay_metadata with the title and author you find.
+This is CRITICAL - if you skip this step, the user won't see the author displayed.
+
+Example patterns to look for:
+- "Pilot 1.03 SOTS" (title)
+- "written by" followed by "by Lenny Pappano" (author is "Lenny Pappano")
+- "Title: My Screenplay" and "Author: John Smith"
 
 **STEP 1 - Create ALL Scenes:**
 Find EVERY scene heading in the screenplay. Scene headings are:

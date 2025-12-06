@@ -126,6 +126,17 @@ function App() {
       useAppStore.getState().setPendingEdit(edit);
     });
 
+    // Listen for screenplay metadata updates
+    window.api.on('screenplay:setTitle', (title: string) => {
+      console.log('[App] AI set screenplay title:', title);
+      useAppStore.getState().setScreenplayTitle(title);
+    });
+
+    window.api.on('screenplay:setAuthor', (author: string) => {
+      console.log('[App] AI set screenplay author:', author);
+      useAppStore.getState().setScreenplayAuthor(author);
+    });
+
     return () => {
       window.api.off('update-downloading', () => { });
       window.api.off('update-progress', () => { });
@@ -143,6 +154,8 @@ function App() {
       window.api.off('menu:open-settings', () => { });
       window.api.off('data:update', () => { });
       window.api.off('editor:previewUpdate', () => { });
+      window.api.off('screenplay:setTitle', () => { });
+      window.api.off('screenplay:setAuthor', () => { });
     };
   }, []);
 

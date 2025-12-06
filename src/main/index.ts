@@ -407,6 +407,12 @@ Date: ${today}
       },
       previewUpdate: (edit) => {
         mainWindow?.webContents.send('editor:previewUpdate', edit);
+      },
+      setScreenplayTitle: (title: string) => {
+        mainWindow?.webContents.send('screenplay:setTitle', title);
+      },
+      setScreenplayAuthor: (author: string) => {
+        mainWindow?.webContents.send('screenplay:setAuthor', author);
       }
     };
     aiClient = new AIClient(apiKey, dbManager, systemActions);
@@ -491,6 +497,12 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
       },
       previewUpdate: (edit) => {
         mainWindow?.webContents.send('editor:previewUpdate', edit);
+      },
+      setScreenplayTitle: (title: string) => {
+        mainWindow?.webContents.send('screenplay:setTitle', title);
+      },
+      setScreenplayAuthor: (author: string) => {
+        mainWindow?.webContents.send('screenplay:setAuthor', author);
       }
     };
     aiClient = new AIClient(apiKey, dbManager, systemActions);
@@ -801,6 +813,12 @@ ipcMain.handle('settings:setGlobal', async (_, settings: any) => {
           },
           previewUpdate: (edit) => {
             mainWindow?.webContents.send('editor:previewUpdate', edit);
+          },
+          setScreenplayTitle: (title: string) => {
+            mainWindow?.webContents.send('screenplay:setTitle', title);
+          },
+          setScreenplayAuthor: (author: string) => {
+            mainWindow?.webContents.send('screenplay:setAuthor', author);
           }
         };
         aiClient = new AIClient(decryptedKey, dbManager, systemActions);

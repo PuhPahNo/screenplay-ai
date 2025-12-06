@@ -28,6 +28,8 @@ interface AppState {
   // Project state
   currentProject: Project | null;
   screenplayContent: string;
+  screenplayAuthor: string | null;
+  screenplayTitle: string | null;
   characters: Character[];
   scenes: Scene[];
   storyline: Storyline | null;
@@ -59,6 +61,8 @@ interface AppState {
   // Actions
   setCurrentProject: (project: Project | null) => void;
   setScreenplayContent: (content: string) => void;
+  setScreenplayAuthor: (author: string | null) => void;
+  setScreenplayTitle: (title: string | null) => void;
   setCharacters: (characters: Character[]) => void;
   setScenes: (scenes: Scene[]) => void;
   setStoryline: (storyline: Storyline | null) => void;
@@ -115,6 +119,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   currentProject: null,
   screenplayContent: '',
+  screenplayAuthor: null,
+  screenplayTitle: null,
   characters: [],
   scenes: [],
   storyline: null,
@@ -140,6 +146,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Setters
   setCurrentProject: (project) => set({ currentProject: project }),
   setScreenplayContent: (content) => set({ screenplayContent: content }),
+  setScreenplayAuthor: (author) => set({ screenplayAuthor: author }),
+  setScreenplayTitle: (title) => set({ screenplayTitle: title }),
   setCharacters: (characters) => set({ characters }),
   setScenes: (scenes) => set({ scenes }),
   setStoryline: (storyline) => set({ storyline }),

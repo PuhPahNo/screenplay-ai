@@ -30,6 +30,8 @@ export default function Editor() {
     scenes,
     loadCharacters,
     loadScenes,
+    screenplayAuthor,
+    screenplayTitle,
   } = useAppStore();
 
   console.log('[Editor] Project:', currentProject?.name, 'Content length:', screenplayContent?.length);
@@ -512,7 +514,16 @@ export default function Editor() {
       {/* Header - Distinct from content areas */}
       <div className="h-14 bg-gradient-to-b from-gray-50 to-gray-100 dark:from-dark-surface dark:to-dark-bg border-b-2 border-gray-300 dark:border-dark-border flex items-center justify-between px-6 shadow-md">
         <div className="flex items-center gap-4">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{currentProject?.name}</h2>
+          <div className="flex flex-col">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+              {screenplayTitle || currentProject?.name}
+            </h2>
+            {screenplayAuthor && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                by {screenplayAuthor}
+              </span>
+            )}
+          </div>
           {isSaving && (
             <span className="text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full border border-primary-200 dark:border-primary-800">
               Saving...
