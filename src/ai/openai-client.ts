@@ -377,7 +377,7 @@ export class AIClient {
           type: 'function',
           function: {
             name: 'renumber_scenes',
-            description: 'Renumber all scenes sequentially starting from 1. Use after deleting scenes to fix gaps.',
+            description: 'Sort and renumber all scenes CHRONOLOGICALLY based on their line position in the screenplay. Scenes are sorted by startLine (where they appear in the text) and renumbered 1, 2, 3... ALWAYS call this after adding scenes to ensure proper order.',
             parameters: {
               type: 'object',
               properties: {},
@@ -420,8 +420,8 @@ export class AIClient {
         messages,
         // Only include tools in agent mode
         ...(isAgentMode && {
-          tools,
-          tool_choice: 'auto',
+        tools,
+        tool_choice: 'auto',
           parallel_tool_calls: true,
         }),
         max_completion_tokens: 4000,
@@ -609,21 +609,21 @@ export class AIClient {
             return `Character "${charName}" already exists - skipping duplicate`;
           }
 
-          const newCharacter = {
-            id: uuidv4(),
+                const newCharacter = {
+                  id: uuidv4(),
             name: charName,
             description: args.description || '',
             age: args.age || '',
             occupation: args.occupation || '',
-            personality: args.personality || '',
-            goals: args.goals || '',
-            arc: '',
-            relationships: {},
-            appearances: [],
+                  personality: args.personality || '',
+                  goals: args.goals || '',
+                  arc: '',
+                  relationships: {},
+                  appearances: [],
             notes: args.role ? `Role: ${args.role}` : '',
-          };
-          await this.dbManager.saveCharacter(newCharacter);
-          this.systemActions?.notifyUpdate();
+                };
+                await this.dbManager.saveCharacter(newCharacter);
+                this.systemActions?.notifyUpdate();
           return `✓ Created character: ${newCharacter.name}`;
         }
 
@@ -662,20 +662,20 @@ export class AIClient {
 
           const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
 
-          const newScene = {
-            id: uuidv4(),
+                const newScene = {
+                  id: uuidv4(),
             number: maxSceneNum + 1,
             heading: sceneHeading,
-            location: '',
-            timeOfDay: '',
-            summary: args.summary || '',
-            characters: args.characters || [],
+                  location: '',
+                  timeOfDay: '',
+                  summary: args.summary || '',
+                  characters: args.characters || [],
             startLine: args.line_number || 0,  // Store the line number for anchoring
             endLine: args.line_number || 0,
-            content: '',
-          };
-          await this.dbManager.saveScene(newScene);
-          this.systemActions?.notifyUpdate();
+                  content: '',
+                };
+                await this.dbManager.saveScene(newScene);
+                this.systemActions?.notifyUpdate();
           return `✓ Created Scene ${newScene.number}: ${newScene.heading} (line ${newScene.startLine})`;
         }
 
@@ -809,8 +809,8 @@ export class AIClient {
         }
 
         case 'delete_scene': {
-          await this.dbManager.deleteScene(args.id);
-          this.systemActions?.notifyUpdate();
+                await this.dbManager.deleteScene(args.id);
+                this.systemActions?.notifyUpdate();
           return `✓ Deleted scene with ID: ${args.id}`;
         }
 
@@ -945,20 +945,27 @@ export class AIClient {
         case 'renumber_scenes': {
           const allScenesForRenumber = await this.dbManager.getScenes();
 
-          // Sort by current number
-          const sortedScenes = allScenesForRenumber.sort((a, b) => (a.number || 0) - (b.number || 0));
+          // Sort by startLine (chronological order in screenplay) - scenes with line 0 go to end
+          const sortedScenes = allScenesForRenumber.sort((a, b) => {
+            const lineA = a.startLine || 99999;
+            const lineB = b.startLine || 99999;
+            return lineA - lineB;
+          });
 
-          // Renumber sequentially
+          // Renumber sequentially based on chronological order
           let newNumber = 1;
+          let reordered = 0;
           for (const scene of sortedScenes) {
             if (scene.number !== newNumber) {
               await this.dbManager.saveScene({ ...scene, number: newNumber });
+              reordered++;
             }
             newNumber++;
           }
 
           this.systemActions?.notifyUpdate();
-          return `✓ Renumbered ${sortedScenes.length} scenes (1 to ${sortedScenes.length})`;
+          console.log(`[AI] Renumbered scenes by line position: ${reordered} scenes moved`);
+          return `✓ Renumbered ${sortedScenes.length} scenes chronologically by line position (${reordered} reordered)`;
         }
 
         // === BATCH OPERATIONS ===
@@ -997,11 +1004,11 @@ export class AIClient {
           console.log('[AI-METADATA] Setting screenplay metadata:', args);
           const results: string[] = [];
           if (args.title) {
-            if (this.systemActions) {
+                if (this.systemActions) {
               console.log('[AI-METADATA] Setting title to:', args.title);
               this.systemActions.setScreenplayTitle(args.title);
               results.push(`✓ Title set to: "${args.title}"`);
-            } else {
+                } else {
               console.log('[AI-METADATA] ERROR: No systemActions available for title!');
             }
           }
@@ -1033,20 +1040,20 @@ export class AIClient {
         }
 
         case 'export_screenplay': {
-          if (this.systemActions) {
-            await this.systemActions.exportScreenplay(args.format);
+                if (this.systemActions) {
+                  await this.systemActions.exportScreenplay(args.format);
             return `✓ Screenplay exported to ${args.format} successfully.`;
-          }
+                }
           return '✗ Export functionality not available.';
         }
 
         case 'update_content': {
-          if (this.systemActions && this.systemActions.previewUpdate) {
-            this.systemActions.previewUpdate({
-              original: args.original_text,
-              modified: args.new_text,
-              description: args.description
-            });
+                if (this.systemActions && this.systemActions.previewUpdate) {
+                  this.systemActions.previewUpdate({
+                    original: args.original_text,
+                    modified: args.new_text,
+                    description: args.description
+                  });
             return `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
           }
           return '✗ Content update functionality not available.';
@@ -1466,12 +1473,16 @@ For each set of duplicates, call merge_characters with:
 Link each character to the scenes where they SPEAK.
 Call link_character_to_scene for each character+scene combination.
 
-**STEP 5 - Verify and Clean Up:**
-After creating everything:
-1. Call list_all_characters to see what exists
-2. Call list_all_scenes to see what exists
+**STEP 5 - ALWAYS Renumber Scenes Chronologically:**
+After creating all scenes, you MUST call renumber_scenes to:
+- Sort scenes by their line_number (chronological order in screenplay)
+- Renumber them 1, 2, 3... based on where they appear
+- This ensures Scene 1 is the FIRST scene in the screenplay
+
+**STEP 6 - Verify:**
+1. Call list_all_scenes to confirm they're in correct order
+2. Call list_all_characters to see what exists
 3. Look for any remaining duplicates or issues
-4. Call renumber_scenes if there are gaps in scene numbers
 
 **CRITICAL RULES:**
 1. READ THE ENTIRE SCREENPLAY BELOW - don't stop early
