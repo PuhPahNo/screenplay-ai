@@ -50,6 +50,7 @@ export default function Editor() {
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
   const [autoAnalysisProgress, setAutoAnalysisProgress] = useState('');
   const [hasCheckedForNewProject, setHasCheckedForNewProject] = useState(false);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   // Panel sizes
   const [leftPanelWidth, setLeftPanelWidth] = useState(320);
@@ -88,9 +89,38 @@ export default function Editor() {
     };
   }, [isResizingLeft, isResizingRight]);
 
-  // Auto-analyze new projects with LLM
+  // Load initial data when project opens
+  useEffect(() => {
+    const loadInitialData = async () => {
+      if (!currentProject) {
+        setHasLoadedInitialData(false);
+        return;
+      }
+      
+      console.log('[Editor] Loading initial data for project...');
+      try {
+        await loadCharacters();
+        await loadScenes();
+        console.log('[Editor] Initial data loaded');
+        setHasLoadedInitialData(true);
+      } catch (error) {
+        console.error('[Editor] Failed to load initial data:', error);
+        setHasLoadedInitialData(true); // Mark as loaded even on error to prevent infinite retries
+      }
+    };
+    
+    loadInitialData();
+  }, [currentProject?.path]); // Only run when project path changes
+
+  // Auto-analyze new projects with LLM (only after data has loaded)
   useEffect(() => {
     const checkAndAnalyzeNewProject = async () => {
+      // Wait for initial data to load first
+      if (!hasLoadedInitialData) {
+        console.log('[Editor] Waiting for initial data to load...');
+        return;
+      }
+      
       // Only check once per project load
       if (hasCheckedForNewProject) return;
       
@@ -104,13 +134,15 @@ export default function Editor() {
         return;
       }
       
-      // Check if this is a "new" project (no characters AND no scenes in database)
-      const isNewProject = characters.length === 0 && scenes.length === 0;
+      // NOW we can safely check if this is a "new" project (data has been loaded)
+      const currentCharacters = useAppStore.getState().characters;
+      const currentScenes = useAppStore.getState().scenes;
+      const isNewProject = currentCharacters.length === 0 && currentScenes.length === 0;
       
-      console.log('[Editor] Checking for new project:', { 
+      console.log('[Editor] Checking for new project (after data load):', { 
         isNew: isNewProject, 
-        characters: characters.length, 
-        scenes: scenes.length,
+        characters: currentCharacters.length, 
+        scenes: currentScenes.length,
         contentLength: screenplayContent.length
       });
       
@@ -129,55 +161,15 @@ export default function Editor() {
       try {
         setAutoAnalysisProgress('Sending screenplay to AI for analysis...');
         
-        // Call the LLM analysis
+        // Call the LLM analysis (this now creates items directly in the database)
         const analysis: LLMAnalysisResult = await window.api.ai.analyzeScreenplay(screenplayContent);
         
         console.log('[Editor] LLM analysis complete:', {
           characters: analysis.characters.length,
-          scenes: analysis.scenes.length,
-          duplicates: analysis.duplicates.length
+          scenes: analysis.scenes.length
         });
         
-        setAutoAnalysisProgress('Saving characters and scenes...');
-        
-        // Save all characters from LLM
-        for (const llmChar of analysis.characters) {
-          const newCharacter = {
-            id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: llmChar.normalizedName.toUpperCase(),
-            description: 'AI-detected character',
-            appearances: [],
-            dialogueCount: llmChar.dialogueCount,
-            firstAppearance: llmChar.firstAppearance,
-            arc: '',
-            age: '',
-            occupation: '',
-            personality: '',
-            backstory: '',
-            goals: '',
-            role: '',
-          };
-          await window.api.db.saveCharacter(newCharacter);
-        }
-        
-        // Save all scenes from LLM
-        for (const llmScene of analysis.scenes) {
-          const newScene = {
-            id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            number: llmScene.number,
-            heading: llmScene.heading.toUpperCase(),
-            content: '',
-            startLine: llmScene.lineNumber,
-            endLine: llmScene.lineNumber,
-            characters: [],
-            summary: '',
-            mood: '',
-            notes: '',
-          };
-          await window.api.db.saveScene(newScene);
-        }
-        
-        // Reload data
+        // Reload data from database (analysis already saved items)
         await loadCharacters();
         await loadScenes();
         
@@ -194,11 +186,12 @@ export default function Editor() {
     };
     
     checkAndAnalyzeNewProject();
-  }, [currentProject, screenplayContent, characters.length, scenes.length, globalSettings?.openaiApiKey, hasCheckedForNewProject, loadCharacters, loadScenes]);
+  }, [currentProject, screenplayContent, hasLoadedInitialData, globalSettings?.openaiApiKey, hasCheckedForNewProject, loadCharacters, loadScenes]);
 
-  // Reset the check flag when project changes
+  // Reset flags when project changes
   useEffect(() => {
     setHasCheckedForNewProject(false);
+    setHasLoadedInitialData(false);
   }, [currentProject?.path]);
 
   const handleEditorChange = (value: string) => {
@@ -220,56 +213,15 @@ export default function Editor() {
     }
   };
 
+  // LLM-powered analysis using the working AI chat infrastructure
   const handleAnalyzeScreenplay = async () => {
     if (!globalSettings?.openaiApiKey) {
       alert('Please configure your OpenAI API key in Settings before analyzing.');
       return;
     }
 
-    try {
-      setIsSaving(true);
-      // First save the current content
-      await saveScreenplay();
-
-      // Parse and extract characters/scenes
-      const parsed = await window.api.parse.fountain(screenplayContent);
-
-      // Save parsed data to database
-      for (const scene of parsed.scenes) {
-        await window.api.db.saveScene(scene);
-      }
-
-      for (const scene of parsed.scenes) {
-        for (const charName of scene.characters) {
-          const existing = useAppStore.getState().characters.find(c =>
-            c.id === charName || c.name.toUpperCase() === charName.toUpperCase()
-          );
-
-          if (!existing) {
-            const newChar = {
-              id: charName,
-              name: charName,
-              description: '',
-              arc: '',
-              relationships: {},
-              appearances: [scene.id],
-            };
-            await window.api.db.saveCharacter(newChar);
-          }
-        }
-      }
-
-      // Reload data
-      await useAppStore.getState().loadCharacters();
-      await useAppStore.getState().loadScenes();
-
-      alert(`Analysis complete! Found ${parsed.scenes.length} scenes and extracted characters.`);
-    } catch (error) {
-      console.error('Failed to analyze screenplay:', error);
-      alert('Failed to analyze screenplay: ' + error);
-    } finally {
-      setIsSaving(false);
-    }
+    // Open the cleanup modal which now uses LLM analysis
+    setShowCleanupModal(true);
   };
 
   const handleSceneClick = useCallback((sceneStartLine: number) => {

@@ -943,8 +943,8 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
   }
 
   /**
-   * LLM-powered screenplay analysis using TOOLS for accurate character and scene detection.
-   * Uses the agentic approach - GPT calls tools to create characters and scenes directly.
+   * LLM-powered screenplay analysis that DIRECTLY creates characters and scenes in the database.
+   * Uses the same tool infrastructure as the chat function - calls systemActions to save to DB.
    */
   async analyzeScreenplayContent(content: string): Promise<{
     title?: string;
@@ -970,273 +970,81 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
       reason: string;
     }>;
   }> {
-    console.log('[AI] Starting LLM screenplay analysis with tools...');
+    console.log('[AI] Starting LLM screenplay analysis - will CREATE characters and scenes in database...');
     
-    // Collect results from tool calls
-    const detectedScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
-    const detectedCharacters: Array<{ name: string; normalizedName: string; aliases: string[]; dialogueCount: number; firstAppearance: number }> = [];
-    const detectedDuplicates: Array<{ names: string[]; suggestedName: string; reason: string }> = [];
-    let detectedTitle: string | undefined;
-    let detectedAuthor: string | undefined;
-    let sceneCounter = 0;
-
-    // Define tools for screenplay analysis
-    const analysisTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-      {
-        type: 'function',
-        function: {
-          name: 'add_detected_character',
-          description: 'Add a character that was detected in the screenplay. Call this for EVERY character who has dialogue.',
-          parameters: {
-            type: 'object',
-            properties: {
-              name: { type: 'string', description: 'Character name in UPPERCASE (e.g., JOHN, SARAH, DR. SMITH)' },
-              dialogueCount: { type: 'number', description: 'Approximate number of times this character speaks' },
-              firstAppearanceLine: { type: 'number', description: 'Approximate line number of first appearance' },
-              description: { type: 'string', description: 'Brief description if apparent from context' },
-            },
-            required: ['name', 'dialogueCount'],
-          },
-        },
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'add_detected_scene',
-          description: 'Add a scene heading that was detected in the screenplay. Call this for EVERY scene.',
-          parameters: {
-            type: 'object',
-            properties: {
-              heading: { type: 'string', description: 'Full scene heading (e.g., INT. COFFEE SHOP - DAY)' },
-              location: { type: 'string', description: 'Location name extracted from heading' },
-              timeOfDay: { type: 'string', description: 'Time of day (DAY, NIGHT, DUSK, DAWN, CONTINUOUS, etc.)' },
-              lineNumber: { type: 'number', description: 'Approximate line number' },
-            },
-            required: ['heading', 'location'],
-          },
-        },
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'report_duplicate_characters',
-          description: 'Report potential duplicate character names (same person with different spellings)',
-          parameters: {
-            type: 'object',
-            properties: {
-              names: { type: 'array', items: { type: 'string' }, description: 'Array of character name variants' },
-              suggestedName: { type: 'string', description: 'The recommended canonical name to use' },
-              reason: { type: 'string', description: 'Why these are likely the same character' },
-            },
-            required: ['names', 'suggestedName', 'reason'],
-          },
-        },
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'set_title_info',
-          description: 'Set the screenplay title and author if found in title page',
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: 'Screenplay title' },
-              author: { type: 'string', description: 'Author name' },
-            },
-            required: [],
-          },
-        },
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'analysis_complete',
-          description: 'Call this when you have finished analyzing the entire screenplay',
-          parameters: {
-            type: 'object',
-            properties: {
-              totalCharacters: { type: 'number', description: 'Total characters found' },
-              totalScenes: { type: 'number', description: 'Total scenes found' },
-            },
-            required: ['totalCharacters', 'totalScenes'],
-          },
-        },
-      },
-    ];
-
-    // Truncate content if too long (keep first 50k chars for context)
-    const truncatedContent = content.length > 50000 
-      ? content.substring(0, 50000) + '\n\n[... screenplay continues ...]'
-      : content;
-
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      {
-        role: 'system',
-        content: `You are a professional screenplay analyzer. Your job is to read the screenplay and use the provided tools to register EVERY character and scene you find.
-
-CRITICAL INSTRUCTIONS:
-1. Call add_detected_character for EVERY character who speaks (has dialogue)
-2. Call add_detected_scene for EVERY scene heading (INT./EXT. lines)
-3. Call report_duplicate_characters if you find name variations (e.g., O'KEEFE vs O'KEEFFE)
-4. Call set_title_info if you find a title page
-5. Call analysis_complete when done
-
-CHARACTER DETECTION:
-- Character names appear in ALL CAPS on their own line before dialogue
-- Strip extensions like (V.O.), (O.S.), (CONT'D) to get the base name
-- IGNORE non-character uppercase: FADE IN, CUT TO, THE END, SUPER, INTERCUT, etc.
-- A character must have dialogue to be counted
-
-SCENE DETECTION:
-- Scene headings start with: INT., EXT., INT./EXT., I/E, EST.
-- Can have ! or . prefix for forced headings
-- Include location and time of day
-
-Be thorough! Find ALL characters and scenes. Do not skip any.`,
-      },
-      {
-        role: 'user',
-        content: `Analyze this screenplay. Use the tools to register every character and scene you find:\n\n${truncatedContent}`,
-      },
-    ];
-
-    let continueLoop = true;
-    let iterations = 0;
-    const maxIterations = 20; // Safety limit
-
-    while (continueLoop && iterations < maxIterations) {
-      iterations++;
-      console.log(`[AI] Analysis iteration ${iterations}...`);
-
-      try {
-        const completion = await this.openai.chat.completions.create({
-          model: 'gpt-5-mini',
-          messages,
-          tools: analysisTools,
-          tool_choice: 'auto',
-          max_completion_tokens: 4000,
-        });
-
-        const responseMessage = completion.choices[0]?.message;
-        
-        if (!responseMessage) {
-          console.error('[AI] No response message');
-          break;
-        }
-
-        // Add assistant message to history
-        messages.push(responseMessage);
-
-        // Process tool calls
-        if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-          console.log(`[AI] Processing ${responseMessage.tool_calls.length} tool calls...`);
-          
-          for (const toolCall of responseMessage.tool_calls) {
-            const functionName = toolCall.function.name;
-            let args: Record<string, unknown>;
-            
-            try {
-              args = JSON.parse(toolCall.function.arguments);
-            } catch {
-              console.error('[AI] Failed to parse tool arguments:', toolCall.function.arguments);
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: 'Error: Invalid JSON arguments',
-              });
-              continue;
-            }
-
-            console.log(`[AI] Tool call: ${functionName}`, args);
-
-            let result = 'OK';
-
-            switch (functionName) {
-              case 'add_detected_character': {
-                const name = (args.name as string || '').toUpperCase().trim();
-                if (name && !detectedCharacters.some(c => c.normalizedName === name)) {
-                  detectedCharacters.push({
-                    name,
-                    normalizedName: name,
-                    aliases: [],
-                    dialogueCount: (args.dialogueCount as number) || 1,
-                    firstAppearance: (args.firstAppearanceLine as number) || 0,
-                  });
-                  result = `Added character: ${name}`;
-                } else {
-                  result = `Character ${name} already added or invalid`;
-                }
-                break;
-              }
-
-              case 'add_detected_scene': {
-                sceneCounter++;
-                detectedScenes.push({
-                  number: sceneCounter,
-                  heading: (args.heading as string) || '',
-                  location: (args.location as string) || '',
-                  timeOfDay: (args.timeOfDay as string) || '',
-                  lineNumber: (args.lineNumber as number) || 0,
-                });
-                result = `Added scene ${sceneCounter}: ${args.heading}`;
-                break;
-              }
-
-              case 'report_duplicate_characters': {
-                detectedDuplicates.push({
-                  names: (args.names as string[]) || [],
-                  suggestedName: (args.suggestedName as string) || '',
-                  reason: (args.reason as string) || '',
-                });
-                result = `Recorded duplicate: ${(args.names as string[])?.join(', ')}`;
-                break;
-              }
-
-              case 'set_title_info': {
-                if (args.title) detectedTitle = args.title as string;
-                if (args.author) detectedAuthor = args.author as string;
-                result = `Set title: ${args.title}, author: ${args.author}`;
-                break;
-              }
-
-              case 'analysis_complete': {
-                console.log(`[AI] Analysis complete: ${args.totalCharacters} characters, ${args.totalScenes} scenes reported`);
-                result = 'Analysis complete';
-                continueLoop = false;
-                break;
-              }
-
-              default:
-                result = `Unknown function: ${functionName}`;
-            }
-
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: result,
-            });
-          }
-        } else {
-          // No more tool calls - we're done
-          console.log('[AI] No more tool calls, ending analysis');
-          continueLoop = false;
-        }
-
-      } catch (error) {
-        console.error('[AI] Error in analysis iteration:', error);
-        throw new Error(`Screenplay analysis failed: ${error}`);
-      }
+    if (!this.systemActions) {
+      throw new Error('System actions not available - cannot save to database');
     }
 
-    console.log(`[AI] Analysis complete: ${detectedScenes.length} scenes, ${detectedCharacters.length} characters, ${detectedDuplicates.length} duplicates`);
+    // Track what we create
+    const createdCharacters: Array<{ name: string; normalizedName: string; aliases: string[]; dialogueCount: number; firstAppearance: number }> = [];
+    const createdScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
+    let sceneCounter = 0;
 
-    return {
-      title: detectedTitle,
-      author: detectedAuthor,
-      scenes: detectedScenes,
-      characters: detectedCharacters,
-      duplicates: detectedDuplicates,
+    // Use the same context structure as chat
+    const context: AIContext = {
+      screenplayContent: content,
+      characters: [],
+      scenes: [],
+      recentMessages: [],
+      chatMode: 'agent', // Force agent mode for tool use
     };
+
+    // Build a focused analysis prompt
+    const analysisPrompt = `IMPORTANT: Analyze this screenplay and use tools to CREATE all characters and scenes you find.
+
+For EACH character who speaks dialogue, call create_character with their name.
+For EACH scene heading (INT./EXT. lines), call create_scene with the heading.
+
+Do NOT just list them - you MUST call the tools to create them in the database.
+
+Start analyzing now and create all characters and scenes you find:`;
+
+    // Call the existing chat function which has all the tool execution logic
+    console.log('[AI] Calling chat function with analysis prompt...');
+    
+    try {
+      const response = await this.chat(analysisPrompt, context);
+      console.log('[AI] Analysis chat response:', response.content.substring(0, 200));
+      
+      // After chat completes, get the created items from the database
+      const allCharacters = await this.dbManager.getCharacters();
+      const allScenes = await this.dbManager.getScenes();
+      
+      // Convert to the expected format
+      for (const char of allCharacters) {
+        createdCharacters.push({
+          name: char.name,
+          normalizedName: char.name.toUpperCase(),
+          aliases: [],
+          dialogueCount: char.dialogueCount || 0,
+          firstAppearance: char.firstAppearance || 0,
+        });
+      }
+      
+      for (const scene of allScenes) {
+        sceneCounter++;
+        createdScenes.push({
+          number: scene.number || sceneCounter,
+          heading: scene.heading,
+          location: scene.heading.split('-')[0]?.replace(/^(INT\.|EXT\.|INT\.\/EXT\.)/, '').trim() || '',
+          timeOfDay: scene.heading.split('-')[1]?.trim() || '',
+          lineNumber: scene.startLine || 0,
+        });
+      }
+      
+      console.log(`[AI] Analysis complete: ${createdScenes.length} scenes, ${createdCharacters.length} characters in database`);
+
+      return {
+        scenes: createdScenes,
+        characters: createdCharacters,
+        duplicates: [], // Chat function handles duplicates via delete tools
+      };
+      
+    } catch (error) {
+      console.error('[AI] Analysis failed:', error);
+      throw error;
+    }
   }
 
   /**
