@@ -639,22 +639,22 @@ export class AIClient {
                 break;
 
               case 'get_character_scenes':
-                const charScenes = await this.dbManager.getScenes();
-                const charName = args.character_name.toUpperCase();
-                const charAppearances = charScenes.filter(s => 
-                  s.characters.some(c => c.toUpperCase() === charName) ||
-                  (s.content && s.content.toUpperCase().includes(charName))
+                const charScenesForQuery = await this.dbManager.getScenes();
+                const searchCharName = args.character_name.toUpperCase();
+                const charAppearancesForQuery = charScenesForQuery.filter(s => 
+                  s.characters.some(c => c.toUpperCase() === searchCharName) ||
+                  (s.content && s.content.toUpperCase().includes(searchCharName))
                 );
                 
-                if (charAppearances.length > 0) {
-                  result = `${charName} appears in ${charAppearances.length} scene(s):\n\n`;
-                  for (const scene of charAppearances) {
+                if (charAppearancesForQuery.length > 0) {
+                  result = `${searchCharName} appears in ${charAppearancesForQuery.length} scene(s):\n\n`;
+                  for (const scene of charAppearancesForQuery) {
                     result += `=== Scene ${scene.number}: ${scene.heading} ===\n`;
                     result += scene.content || '[No content]';
                     result += '\n\n---\n\n';
                   }
                 } else {
-                  result = `${charName} not found in any scenes.`;
+                  result = `${searchCharName} not found in any scenes.`;
                 }
                 break;
 
