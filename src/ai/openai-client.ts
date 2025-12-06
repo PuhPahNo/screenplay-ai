@@ -433,6 +433,14 @@ export class AIClient {
       }
 
       const responseMessage = completion.choices[0]?.message;
+      
+      console.log('[AI-CHAT] OpenAI response received');
+      console.log('[AI-CHAT] Has tool_calls:', !!responseMessage?.tool_calls);
+      console.log('[AI-CHAT] Tool calls count:', responseMessage?.tool_calls?.length || 0);
+      if (responseMessage?.tool_calls) {
+        console.log('[AI-CHAT] Tools called:', responseMessage.tool_calls.map(t => t.function.name).join(', '));
+      }
+      console.log('[AI-CHAT] Content preview:', responseMessage?.content?.substring(0, 300) || '(no content)');
 
       // Handle tool calls
       if (responseMessage?.tool_calls) {
@@ -542,6 +550,7 @@ export class AIClient {
 
   // Centralized tool execution logic - used for ALL tool calls
   private async executeToolCall(toolName: string, args: any): Promise<string> {
+    console.log(`[AI-TOOL] Executing: ${toolName}`, JSON.stringify(args).substring(0, 200));
     try {
       switch (toolName) {
         case 'create_character': {
@@ -983,23 +992,33 @@ export class AIClient {
 
         // === METADATA ===
         case 'set_screenplay_metadata': {
+          console.log('[AI-METADATA] ========================================');
+          console.log('[AI-METADATA] Setting screenplay metadata:', args);
           const results: string[] = [];
           if (args.title) {
-            if (this.systemActions) {
+                if (this.systemActions) {
+              console.log('[AI-METADATA] Setting title to:', args.title);
               this.systemActions.setScreenplayTitle(args.title);
               results.push(`✓ Title set to: "${args.title}"`);
+                } else {
+              console.log('[AI-METADATA] ERROR: No systemActions available for title!');
             }
           }
           if (args.author) {
             if (this.systemActions) {
+              console.log('[AI-METADATA] Setting author to:', args.author);
               this.systemActions.setScreenplayAuthor(args.author);
               results.push(`✓ Author set to: "${args.author}"`);
+            } else {
+              console.log('[AI-METADATA] ERROR: No systemActions available for author!');
             }
           }
           if (results.length === 0) {
+            console.log('[AI-METADATA] ERROR: No title or author provided in args');
             return '✗ No title or author provided.';
           }
-          console.log('[AI] Set screenplay metadata:', args);
+          console.log('[AI-METADATA] Success:', results.join(', '));
+          console.log('[AI-METADATA] ========================================');
           return results.join('\n');
         }
 
@@ -1374,29 +1393,37 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
     const createdScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
     let sceneCounter = 0;
 
-    // Use the same context structure as chat
+    // Use a MINIMAL context - don't show existing database items
+    // This forces the AI to analyze the content freshly and create items via tools
     const context: AIContext = {
-      currentContent: content,
-      characters: [],
-      scenes: [],
+      currentContent: '', // Don't put content here - it's in the prompt
+      characters: [], // Empty - don't show existing, let AI discover
+      scenes: [], // Empty - don't show existing, let AI discover
       chatMode: 'agent', // Force agent mode for tool use
     };
 
     // Build a focused analysis prompt
-    const analysisPrompt = `You are an intelligent screenplay assistant. Carefully analyze this Fountain-format screenplay and perform these actions IN ORDER:
+    const analysisPrompt = `You are an intelligent screenplay assistant. You MUST analyze this screenplay and call tools to register what you find.
 
-**STEP 0 - Extract Title Page Information:**
-Look at the VERY BEGINNING of the screenplay for title page information:
-- Find the screenplay TITLE (usually on the first line or after "Title:")
-- Find the AUTHOR (look for "written by", "by", "Author:", or similar phrases)
+IMPORTANT: The database may already have some items. Your job is to:
+1. Find ALL scenes and characters in the screenplay content below
+2. Call the tools to add them (the tools will handle duplicates)
+3. DO NOT SKIP items just because you think they might exist
 
-IMMEDIATELY call set_screenplay_metadata with the title and author you find.
-This is CRITICAL - if you skip this step, the user won't see the author displayed.
+**STEP 0 - FIRST: Extract Title Page Information:**
+Look at the VERY FIRST LINES of the screenplay for title/author.
+The title page is BEFORE any INT./EXT. scene headings.
 
-Example patterns to look for:
-- "Pilot 1.03 SOTS" (title)
-- "written by" followed by "by Lenny Pappano" (author is "Lenny Pappano")
-- "Title: My Screenplay" and "Author: John Smith"
+Call set_screenplay_metadata IMMEDIATELY with what you find:
+- Title: Usually the first non-blank line (e.g., "Pilot 1.03 SOTS")
+- Author: Look for "written by", "by [NAME]", or "Author:"
+
+Example from this screenplay - the first lines might be:
+"Pilot 1.03 SOTS" (this is the TITLE)
+"written by" 
+"by Lenny Pappano" (this is the AUTHOR - "Lenny Pappano")
+
+YOU MUST CALL set_screenplay_metadata with title and author NOW before proceeding!
 
 **STEP 1 - Create ALL Scenes:**
 Find EVERY scene heading in the screenplay. Scene headings are:
@@ -1457,13 +1484,16 @@ ${content}
 Start analyzing the screenplay now and call the tools for EVERY scene and character you find:`;
 
     // Call the existing chat function which has all the tool execution logic
-    console.log('[AI] Calling chat function with analysis prompt...');
-    console.log('[AI] Screenplay content length:', content.length);
-    console.log('[AI] First 500 chars:', content.substring(0, 500));
+    console.log('[AI-ANALYSIS] ========================================');
+    console.log('[AI-ANALYSIS] Starting screenplay analysis');
+    console.log('[AI-ANALYSIS] Content length:', content.length);
+    console.log('[AI-ANALYSIS] First 800 chars of screenplay:');
+    console.log(content.substring(0, 800));
+    console.log('[AI-ANALYSIS] ========================================');
 
     try {
       const response = await this.chat(analysisPrompt, context);
-      console.log('[AI] Analysis chat response:', response.content.substring(0, 200));
+      console.log('[AI-ANALYSIS] Chat response (first 500 chars):', response.content.substring(0, 500));
 
       // After chat completes, get the created items from the database
       const allCharacters = await this.dbManager.getCharacters();
