@@ -29,7 +29,7 @@ export interface ParsedFountain {
 // Patterns for element detection
 const PATTERNS = {
   sceneHeading: /^(INT|EXT|INT\.\/EXT|INT\/EXT|I\/E|EST)[\.\s]/i,
-  forcedSceneHeading: /^\./,
+  forcedSceneHeading: /^[.!]/,  // Both . and ! can force a scene heading
   transition: /^[A-Z\s]+TO:$/,
   forcedTransition: /^>\s*.+$/,
   centered: /^>.*<$/,
@@ -78,10 +78,47 @@ export class FountainParserAdapter {
       result.author = titlePage.author;
       result.draft = titlePage.draft;
       result.date = titlePage.date;
+      
+      // Add title page content as centered tokens at the start
+      const titleTokens: FountainToken[] = [];
+      
+      if (titlePage.title) {
+        titleTokens.push({ type: 'centered', text: titlePage.title, raw: `Title: ${titlePage.title}` });
+      }
+      if (titlePage.credit) {
+        titleTokens.push({ type: 'centered', text: titlePage.credit, raw: `Credit: ${titlePage.credit}` });
+      }
+      if (titlePage.author) {
+        titleTokens.push({ type: 'centered', text: `by ${titlePage.author}`, raw: `Author: ${titlePage.author}` });
+      }
+      if (titlePage.source) {
+        titleTokens.push({ type: 'centered', text: titlePage.source, raw: `Source: ${titlePage.source}` });
+      }
+      if (titlePage.contact) {
+        titleTokens.push({ type: 'centered', text: titlePage.contact, raw: `Contact: ${titlePage.contact}` });
+      }
+      if (titlePage.copyright) {
+        titleTokens.push({ type: 'centered', text: titlePage.copyright, raw: `Copyright: ${titlePage.copyright}` });
+      }
+      if (titlePage.date) {
+        titleTokens.push({ type: 'centered', text: titlePage.date, raw: `Date: ${titlePage.date}` });
+      }
+      if (titlePage.draft) {
+        titleTokens.push({ type: 'centered', text: titlePage.draft, raw: `Draft: ${titlePage.draft}` });
+      }
+      
+      // Add spacing after title page
+      if (titleTokens.length > 0) {
+        titleTokens.push({ type: 'blank', text: '', raw: '' });
+        titleTokens.push({ type: 'blank', text: '', raw: '' });
+      }
+      
+      result.tokens = titleTokens;
     }
 
-    // Tokenize the body
-    result.tokens = this.tokenize(body, result.characters, result.scenes);
+    // Tokenize the body and append to tokens
+    const bodyTokens = this.tokenize(body, result.characters, result.scenes);
+    result.tokens = [...result.tokens, ...bodyTokens];
     
     return result;
   }
@@ -210,16 +247,22 @@ export class FountainParserAdapter {
     nextLine: string,
     previousType: ElementType | null
   ): FountainToken {
-    // Forced scene heading
+    // Forced scene heading (. or ! prefix)
     if (PATTERNS.forcedSceneHeading.test(trimmed)) {
-      return {
-        type: 'scene-heading',
-        text: trimmed.substring(1).trim().toUpperCase(),
-        raw,
-      };
+      const textWithoutPrefix = trimmed.substring(1).trim();
+      // Check if the rest looks like a scene heading
+      if (PATTERNS.sceneHeading.test(textWithoutPrefix) || 
+          textWithoutPrefix.toUpperCase().startsWith('INT') ||
+          textWithoutPrefix.toUpperCase().startsWith('EXT')) {
+        return {
+          type: 'scene-heading',
+          text: textWithoutPrefix.toUpperCase(),
+          raw,
+        };
+      }
     }
 
-    // Scene heading
+    // Scene heading (standard INT./EXT. patterns)
     if (PATTERNS.sceneHeading.test(trimmed)) {
       return {
         type: 'scene-heading',

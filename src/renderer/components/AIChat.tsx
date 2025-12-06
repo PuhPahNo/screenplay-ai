@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo, useCallback, useMemo, startTransition } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAppStore } from '../store/app-store';
 import { 
   Bot, X, Send, Plus, Trash2, MessageSquare, 
-  ChevronLeft, ChevronRight, Loader2, BarChart3 
+  ChevronLeft, ChevronRight, Loader2, BarChart3, ChevronUp
 } from 'lucide-react';
-import type { Conversation, TokenUsage } from '../../shared/types';
+import type { Conversation, TokenUsage, AIMessage } from '../../shared/types';
 
 // Helper to format token counts (e.g., 1234 -> "1.2k")
 function formatTokens(tokens: number): string {
@@ -34,7 +34,6 @@ function formatRelativeTime(timestamp: number): string {
 
 // Group conversations by time period
 function groupConversations(conversations: Conversation[]) {
-  const now = Date.now();
   const today = new Date().setHours(0, 0, 0, 0);
   const yesterday = today - 86400000;
   const weekAgo = today - 7 * 86400000;
@@ -61,6 +60,54 @@ function groupConversations(conversations: Conversation[]) {
   return groups.filter(g => g.conversations.length > 0);
 }
 
+// Memoized message bubble component to prevent re-renders
+const MessageBubble = memo(function MessageBubble({ 
+  msg, 
+  formatTokens 
+}: { 
+  msg: AIMessage; 
+  formatTokens: (tokens: number) => string;
+}) {
+  return (
+    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+          msg.role === 'user'
+            ? 'bg-primary-600 text-white'
+            : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
+        }`}
+      >
+        <div className={`text-sm prose prose-sm dark:prose-invert max-w-none 
+          prose-p:my-2 prose-p:leading-relaxed
+          prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
+          prose-ul:my-2 prose-li:my-0.5
+          prose-strong:font-semibold
+          prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-gray-200 dark:prose-code:bg-gray-700
+          ${msg.role === 'user' 
+            ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' 
+            : 'prose-p:text-gray-800 dark:prose-p:text-gray-200'
+        }`}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+        </div>
+        {/* Token usage for AI responses */}
+        {msg.role === 'assistant' && msg.tokenUsage && (
+          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+            <BarChart3 className="w-3 h-3" />
+            <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
+            <span>·</span>
+            <span>{formatTokens(msg.tokenUsage.completionTokens)} out</span>
+            <span>·</span>
+            <span>{formatTokens(msg.tokenUsage.totalTokens)} total</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// How many messages to show initially (recent ones)
+const INITIAL_MESSAGES_TO_SHOW = 20;
+
 export default function AIChat() {
   const { 
     aiHistory, 
@@ -82,7 +129,26 @@ export default function AIChat() {
   const [showSidebar, setShowSidebar] = useState(false); // Collapsed by default for more chat space
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
+  const [showAllMessages, setShowAllMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Filter and limit messages for performance
+  const filteredMessages = useMemo(() => {
+    return aiHistory.filter((msg) => msg.role !== 'system');
+  }, [aiHistory]);
+  
+  const visibleMessages = useMemo(() => {
+    if (showAllMessages || filteredMessages.length <= INITIAL_MESSAGES_TO_SHOW) {
+      return filteredMessages;
+    }
+    // Show the most recent messages
+    return filteredMessages.slice(-INITIAL_MESSAGES_TO_SHOW);
+  }, [filteredMessages, showAllMessages]);
+  
+  const hiddenMessageCount = filteredMessages.length - visibleMessages.length;
+  
+  // Memoized formatTokens function
+  const formatTokensCallback = useCallback(formatTokens, []);
 
   // Load conversations on mount
   useEffect(() => {
@@ -98,6 +164,11 @@ export default function AIChat() {
     
     initializeChat();
   }, []);
+  
+  // Reset "show all" when switching conversations
+  useEffect(() => {
+    setShowAllMessages(false);
+  }, [currentConversationId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -145,14 +216,14 @@ export default function AIChat() {
     <div className="h-full flex bg-white dark:bg-dark-surface">
       {/* Main Chat Area - Now on left */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
+      {/* Header */}
+      <div className="h-12 border-b border-gray-200 dark:border-dark-border flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <button
-              onClick={toggleAIChat}
+        <button
+          onClick={toggleAIChat}
               className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-            >
-              <X className="w-5 h-5" />
+        >
+          <X className="w-5 h-5" />
             </button>
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">
               {currentConversationId 
@@ -186,7 +257,7 @@ export default function AIChat() {
                 title="Agent mode: Take actions (create, edit, delete)"
               >
                 Agent
-              </button>
+        </button>
             </div>
             
             {!showSidebar && (
@@ -199,11 +270,11 @@ export default function AIChat() {
               </button>
             )}
           </div>
-        </div>
+      </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {aiHistory.length === 0 ? (
+          {filteredMessages.length === 0 ? (
             <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
               <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
               <p className="text-sm font-medium">Start a conversation</p>
@@ -231,65 +302,44 @@ export default function AIChat() {
               </div>
             </div>
           ) : (
-            aiHistory
-              .filter((msg) => msg.role !== 'system')
-              .map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            <>
+              {/* Load more button for long conversations */}
+              {hiddenMessageCount > 0 && (
+                <button
+                  onClick={() => startTransition(() => setShowAllMessages(true))}
+                  className="w-full py-2 px-4 text-xs text-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 bg-gray-50 dark:bg-dark-bg rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      msg.role === 'user'
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
-                    }`}
-                  >
-                    <div className={`text-sm prose prose-sm dark:prose-invert max-w-none 
-                      prose-p:my-2 prose-p:leading-relaxed
-                      prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
-                      prose-ul:my-2 prose-li:my-0.5
-                      prose-strong:font-semibold
-                      prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-gray-200 dark:prose-code:bg-gray-700
-                      ${msg.role === 'user' 
-                        ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' 
-                        : 'prose-p:text-gray-800 dark:prose-p:text-gray-200'
-                    }`}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                    </div>
-                    {/* Token usage for AI responses */}
-                    {msg.role === 'assistant' && msg.tokenUsage && (
-                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                        <BarChart3 className="w-3 h-3" />
-                        <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
-                        <span>·</span>
-                        <span>{formatTokens(msg.tokenUsage.completionTokens)} out</span>
-                        <span>·</span>
-                        <span>{formatTokens(msg.tokenUsage.totalTokens)} total</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
+                  <ChevronUp className="w-4 h-4" />
+                  Load {hiddenMessageCount} older messages
+                </button>
+              )}
+              {visibleMessages.map((msg) => (
+                <MessageBubble 
+                  key={msg.id} 
+                  msg={msg} 
+                  formatTokens={formatTokensCallback}
+                />
+              ))}
+            </>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
-        <div className="border-t border-gray-200 dark:border-dark-border p-4">
-          <div className="flex gap-2">
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about characters, scenes, or storyline..."
+      {/* Input */}
+      <div className="border-t border-gray-200 dark:border-dark-border p-4">
+        <div className="flex gap-2">
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask about characters, scenes, or storyline..."
               className="flex-1 px-4 py-3 border border-gray-300 dark:border-dark-border rounded-xl bg-white dark:bg-dark-bg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none transition-shadow"
               rows={2}
-              disabled={isSending}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!message.trim() || isSending}
+            disabled={isSending}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!message.trim() || isSending}
               className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-end"
             >
               {isSending ? (
@@ -410,7 +460,7 @@ export default function AIChat() {
             >
               Hide
               <ChevronRight className="w-4 h-4" />
-            </button>
+          </button>
           </div>
         </div>
       )}
