@@ -19,35 +19,26 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
     setIsExporting(true);
     try {
-      const filters = {
-        pdf: [{ name: 'PDF Files', extensions: ['pdf'] }],
-        fdx: [{ name: 'Final Draft Files', extensions: ['fdx'] }],
-        fountain: [{ name: 'Fountain Files', extensions: ['fountain'] }],
-      };
-
-      const defaultName = `${currentProject.name}.${format}`;
-      const savePath = await (window.api.file as any).saveDialog(defaultName, filters[format]);
+      const defaultName = `${currentProject.name}`;
+      
+      // Use the correct export API
+      const savePath = await window.api.export.showSaveDialog(format, defaultName);
 
       if (savePath) {
+        // Use the export API methods which handle everything
         if (format === 'pdf') {
-          await window.api.file.exportPDF(screenplayContent, savePath);
+          await window.api.export.pdf(savePath, { content: screenplayContent });
         } else if (format === 'fdx') {
-          await (window.api.file as any).exportFDX(screenplayContent, savePath);
-        } else {
-          // Fountain - just save the raw content
-          await window.api.project.save(screenplayContent);
-          // Copy to export location
-          const fs = require('fs');
-          fs.copyFileSync(
-            `${currentProject.path}/screenplay.fountain`,
-            savePath
-          );
+          await window.api.export.fdx(savePath, { content: screenplayContent });
+        } else if (format === 'fountain') {
+          await window.api.export.fountain(savePath, { content: screenplayContent });
         }
 
         alert('Export successful!');
         onClose();
       }
     } catch (error) {
+      console.error('Export error:', error);
       alert('Export failed: ' + error);
     } finally {
       setIsExporting(false);

@@ -215,6 +215,57 @@ export class ExportManager {
   }
 
   /**
+   * Export raw screenplay content to PDF
+   */
+  async exportContentToPDF(
+    content: string,
+    outputPath: string,
+    options: ExportOptions = {}
+  ): Promise<void> {
+    const pdfContent = this.createSimplePDF(content, options.title || 'Screenplay');
+    fs.writeFileSync(outputPath, pdfContent);
+    console.log(`[Export] Exported content to PDF: ${outputPath}`);
+  }
+
+  /**
+   * Export raw screenplay content to Final Draft XML
+   */
+  async exportContentToFinalDraft(
+    content: string,
+    outputPath: string,
+    options: ExportOptions = {}
+  ): Promise<void> {
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<FinalDraft DocumentType="Script" Template="No" Version="1">\n';
+    xml += '  <Content>\n';
+
+    // Parse the content into paragraphs
+    const paragraphs = this.parseContentToParagraphs(content);
+    for (const para of paragraphs) {
+      xml += `    <Paragraph Type="${para.type}">\n`;
+      xml += `      <Text>${this.escapeXml(para.text)}</Text>\n`;
+      xml += '    </Paragraph>\n';
+    }
+
+    xml += '  </Content>\n';
+
+    // Title page
+    xml += '  <TitlePage>\n';
+    if (options.title) {
+      xml += `    <Content><Paragraph><Text>${this.escapeXml(options.title)}</Text></Paragraph></Content>\n`;
+    }
+    if (options.author) {
+      xml += `    <Content><Paragraph><Text>Written by</Text></Paragraph></Content>\n`;
+      xml += `    <Content><Paragraph><Text>${this.escapeXml(options.author)}</Text></Paragraph></Content>\n`;
+    }
+    xml += '  </TitlePage>\n';
+    xml += '</FinalDraft>\n';
+
+    fs.writeFileSync(outputPath, xml, 'utf8');
+    console.log(`[Export] Exported content to Final Draft: ${outputPath}`);
+  }
+
+  /**
    * Helper: Escape XML special characters
    */
   private escapeXml(text: string): string {

@@ -955,7 +955,7 @@ export class AIClient {
           }
 
           this.systemActions?.notifyUpdate();
-          
+
           let result = `**Batch Delete Results:**\n`;
           if (deleted.length > 0) {
             result += `✓ Deleted (${deleted.length}): ${deleted.join(', ')}\n`;

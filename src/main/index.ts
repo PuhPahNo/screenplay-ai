@@ -935,41 +935,65 @@ ipcMain.handle('backup:getDir', async () => {
 // ============================================
 
 ipcMain.handle('export:fountain', async (_, outputPath: string, options?: any) => {
+  // If raw content is provided, write it directly (preferred method)
+  if (options?.content) {
+    const fs = await import('fs');
+    fs.writeFileSync(outputPath, options.content, 'utf8');
+    console.log(`[Export] Exported raw Fountain to: ${outputPath}`);
+    return outputPath;
+  }
+  
+  // Fallback to database export
   if (!dbManager) throw new Error('No database open');
-
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-
   await exportManager.exportToFountain(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:pdf', async (_, outputPath: string, options?: any) => {
+  // If raw content is provided, export it directly
+  if (options?.content) {
+    await exportManager.exportContentToPDF(options.content, outputPath, options);
+    return outputPath;
+  }
+  
+  // Fallback to database export
   if (!dbManager) throw new Error('No database open');
-
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-
   await exportManager.exportToPDF(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:fdx', async (_, outputPath: string, options?: any) => {
+  // If raw content is provided, export it directly
+  if (options?.content) {
+    await exportManager.exportContentToFinalDraft(options.content, outputPath, options);
+    return outputPath;
+  }
+  
+  // Fallback to database export
   if (!dbManager) throw new Error('No database open');
-
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-
   await exportManager.exportToFinalDraft(scenes, characters, outputPath, options);
   return outputPath;
 });
 
 ipcMain.handle('export:txt', async (_, outputPath: string, options?: any) => {
+  // If raw content is provided, write it directly
+  if (options?.content) {
+    const fs = await import('fs');
+    fs.writeFileSync(outputPath, options.content, 'utf8');
+    console.log(`[Export] Exported raw Text to: ${outputPath}`);
+    return outputPath;
+  }
+  
+  // Fallback to database export
   if (!dbManager) throw new Error('No database open');
-
   const scenes = await dbManager.getScenes();
   const characters = await dbManager.getCharacters();
-
   await exportManager.exportToText(scenes, characters, outputPath, options);
   return outputPath;
 });
