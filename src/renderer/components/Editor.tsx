@@ -162,35 +162,68 @@ export default function Editor() {
 
   // Handle cleanup suggestions
   const handleApplyCleanup = async (suggestions: CleanupSuggestion[]) => {
+    console.log('[Cleanup] Starting cleanup with', suggestions.length, 'suggestions');
+    
+    // Get fresh data from the store to avoid stale closures
+    const currentCharacters = useAppStore.getState().characters;
+    const currentScenes = useAppStore.getState().scenes;
+    
+    console.log('[Cleanup] Current characters:', currentCharacters.map(c => c.name));
+    console.log('[Cleanup] Current scenes:', currentScenes.length);
+    
+    let deletedCount = 0;
+    let mergedCount = 0;
+    
     for (const suggestion of suggestions) {
+      console.log('[Cleanup] Processing:', suggestion.type, suggestion.category, suggestion.items);
+      
       if (suggestion.category === 'character') {
         if (suggestion.type === 'delete') {
           // Delete each character in the items list
           for (const charName of suggestion.items) {
-            const char = characters.find(c => c.name === charName);
+            // Case-insensitive matching
+            const char = currentCharacters.find(c => 
+              c.name.toUpperCase().trim() === charName.toUpperCase().trim()
+            );
             if (char) {
+              console.log('[Cleanup] Deleting character:', char.name, 'ID:', char.id);
               await window.api.db.deleteCharacter(char.id);
+              deletedCount++;
+            } else {
+              console.warn('[Cleanup] Character not found:', charName);
             }
           }
         } else if (suggestion.type === 'merge' && suggestion.targetName) {
           // Keep the target, delete the rest
-          const targetChar = characters.find(c => c.name === suggestion.targetName);
+          const targetChar = currentCharacters.find(c => 
+            c.name.toUpperCase().trim() === suggestion.targetName!.toUpperCase().trim()
+          );
+          
+          if (!targetChar) {
+            console.warn('[Cleanup] Target character not found:', suggestion.targetName);
+            continue;
+          }
+          
+          console.log('[Cleanup] Merging into:', targetChar.name);
+          
           for (const charName of suggestion.items) {
-            if (charName !== suggestion.targetName) {
-              const char = characters.find(c => c.name === charName);
+            if (charName.toUpperCase().trim() !== suggestion.targetName.toUpperCase().trim()) {
+              const char = currentCharacters.find(c => 
+                c.name.toUpperCase().trim() === charName.toUpperCase().trim()
+              );
               if (char) {
                 // Merge appearances into target
-                if (targetChar) {
-                  const mergedAppearances = [...new Set([
-                    ...targetChar.appearances,
-                    ...char.appearances
-                  ])];
-                  await window.api.db.saveCharacter({
-                    ...targetChar,
-                    appearances: mergedAppearances,
-                  });
-                }
+                const mergedAppearances = [...new Set([
+                  ...targetChar.appearances,
+                  ...char.appearances
+                ])];
+                await window.api.db.saveCharacter({
+                  ...targetChar,
+                  appearances: mergedAppearances,
+                });
+                console.log('[Cleanup] Deleting merged character:', char.name);
                 await window.api.db.deleteCharacter(char.id);
+                mergedCount++;
               }
             }
           }
@@ -202,15 +235,21 @@ export default function Editor() {
             const match = sceneLabel.match(/Scene (\d+):/);
             if (match) {
               const sceneNum = parseInt(match[1], 10);
-              const scene = scenes.find(s => s.number === sceneNum);
+              const scene = currentScenes.find(s => s.number === sceneNum);
               if (scene) {
+                console.log('[Cleanup] Deleting scene:', scene.number, scene.heading);
                 await window.api.db.deleteScene(scene.id);
+                deletedCount++;
+              } else {
+                console.warn('[Cleanup] Scene not found:', sceneNum);
               }
             }
           }
         }
       }
     }
+
+    console.log('[Cleanup] Completed. Deleted:', deletedCount, 'Merged:', mergedCount);
 
     // Reload data after cleanup
     await loadCharacters();
@@ -478,6 +517,7 @@ export default function Editor() {
         onClose={() => setShowCleanupModal(false)}
         characters={characters}
         scenes={scenes}
+        screenplayContent={screenplayContent}
         onApplyCleanup={handleApplyCleanup}
       />
     </div>

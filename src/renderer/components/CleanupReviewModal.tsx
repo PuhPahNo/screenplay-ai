@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, AlertTriangle, Check, Merge, Trash2, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, Check, Merge, Trash2, Loader2, FileSearch } from 'lucide-react';
+import { FountainParserAdapter } from '../fountain/parser';
 import type { Character, Scene } from '../../shared/types';
 
 interface CleanupSuggestion {
@@ -15,6 +16,7 @@ interface CleanupReviewModalProps {
   onClose: () => void;
   characters: Character[];
   scenes: Scene[];
+  screenplayContent: string; // Add screenplay content for cross-referencing
   onApplyCleanup: (suggestions: CleanupSuggestion[]) => Promise<void>;
 }
 
@@ -23,6 +25,7 @@ export function CleanupReviewModal({
   onClose,
   characters,
   scenes,
+  screenplayContent,
   onApplyCleanup,
 }: CleanupReviewModalProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -43,22 +46,105 @@ export function CleanupReviewModal({
     setSuggestions([]);
 
     try {
+      console.log('[Cleanup] Starting analysis...');
+      console.log('[Cleanup] Characters in DB:', characters.length);
+      console.log('[Cleanup] Scenes in DB:', scenes.length);
+      console.log('[Cleanup] Screenplay length:', screenplayContent?.length || 0);
+      
+      // Parse the actual screenplay to find what's really there
+      const parsed = screenplayContent 
+        ? FountainParserAdapter.parse(screenplayContent)
+        : { characters: new Set<string>(), scenes: [] };
+      
+      const screenplayCharacters = parsed.characters;
+      const screenplaySceneHeadings = new Set(
+        parsed.scenes.map(s => s.heading.toUpperCase().trim())
+      );
+      
+      console.log('[Cleanup] Characters in screenplay:', Array.from(screenplayCharacters));
+      console.log('[Cleanup] Scenes in screenplay:', parsed.scenes.length);
+      
       // Analyze characters for duplicates/similar names
       const charSuggestions = analyzeCharacters(characters);
+      
+      // Cross-reference: Find characters in DB that don't appear in screenplay
+      const orphanedCharSuggestions = findOrphanedCharacters(characters, screenplayCharacters);
       
       // Analyze scenes for issues
       const sceneSuggestions = analyzeScenes(scenes);
       
-      const allSuggestions = [...charSuggestions, ...sceneSuggestions];
+      // Cross-reference: Find scenes in DB that don't match screenplay
+      const orphanedSceneSuggestions = findOrphanedScenes(scenes, screenplaySceneHeadings);
+      
+      const allSuggestions = [
+        ...orphanedCharSuggestions,  // Orphaned characters first (highest priority)
+        ...charSuggestions,
+        ...orphanedSceneSuggestions,
+        ...sceneSuggestions,
+      ];
+      
+      console.log('[Cleanup] Total suggestions:', allSuggestions.length);
       setSuggestions(allSuggestions);
       
       // Select all by default
       setSelectedSuggestions(new Set(allSuggestions.map((_, i) => i)));
     } catch (err) {
+      console.error('[Cleanup] Analysis error:', err);
       setError(err instanceof Error ? err.message : 'Failed to analyze');
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // Find characters in DB that don't appear in the actual screenplay
+  const findOrphanedCharacters = (
+    dbChars: Character[], 
+    screenplayChars: Set<string>
+  ): CleanupSuggestion[] => {
+    const suggestions: CleanupSuggestion[] = [];
+    const screenplayCharsUpper = new Set(
+      Array.from(screenplayChars).map(c => c.toUpperCase().trim())
+    );
+    
+    for (const char of dbChars) {
+      const nameUpper = char.name.toUpperCase().trim();
+      
+      // Check if this character appears in the screenplay
+      if (!screenplayCharsUpper.has(nameUpper)) {
+        suggestions.push({
+          type: 'delete',
+          category: 'character',
+          items: [char.name],
+          reason: 'Character not found in screenplay text - may be incorrectly detected',
+        });
+      }
+    }
+    
+    return suggestions;
+  };
+
+  // Find scenes in DB that don't match screenplay headings
+  const findOrphanedScenes = (
+    dbScenes: Scene[], 
+    screenplayHeadings: Set<string>
+  ): CleanupSuggestion[] => {
+    const suggestions: CleanupSuggestion[] = [];
+    
+    for (const scene of dbScenes) {
+      const headingUpper = scene.heading.toUpperCase().trim();
+      
+      // Check if this scene heading exists in the screenplay
+      if (!screenplayHeadings.has(headingUpper)) {
+        suggestions.push({
+          type: 'delete',
+          category: 'scene',
+          items: [`Scene ${scene.number}: ${scene.heading}`],
+          reason: 'Scene heading not found in screenplay - may be outdated',
+        });
+      }
+    }
+    
+    return suggestions;
   };
 
   // Analyze characters for potential duplicates or issues
@@ -275,11 +361,14 @@ export function CleanupReviewModal({
                       <div className="flex items-center gap-2 mb-1">
                         {suggestion.type === 'merge' ? (
                           <Merge className="w-4 h-4 text-purple-400" />
+                        ) : suggestion.reason.includes('not found in screenplay') ? (
+                          <FileSearch className="w-4 h-4 text-amber-400" />
                         ) : (
                           <Trash2 className="w-4 h-4 text-red-400" />
                         )}
                         <span className="text-sm font-medium text-white">
-                          {suggestion.type === 'merge' ? 'Merge' : 'Delete'}{' '}
+                          {suggestion.type === 'merge' ? 'Merge' : 
+                           suggestion.reason.includes('not found in screenplay') ? 'Remove (Orphaned)' : 'Delete'}{' '}
                           <span className="text-zinc-400">
                             ({suggestion.category})
                           </span>
