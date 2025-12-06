@@ -1391,17 +1391,25 @@ After creating everything:
 4. Call renumber_scenes if there are gaps in scene numbers
 
 **CRITICAL RULES:**
-1. READ THE ENTIRE SCREENPLAY - don't stop early
+1. READ THE ENTIRE SCREENPLAY BELOW - don't stop early
 2. Create EVERY scene, even if similar headings exist
 3. Only create actual PEOPLE as characters
 4. Identify and MERGE duplicate character names
 5. Use the tools - don't just describe what you found
 6. VERIFY your work at the end by listing what exists
 
-Start analyzing the screenplay now and call the tools:`;
+=== FULL SCREENPLAY CONTENT (analyze this) ===
+
+${content}
+
+=== END OF SCREENPLAY ===
+
+Start analyzing the screenplay now and call the tools for EVERY scene and character you find:`;
 
     // Call the existing chat function which has all the tool execution logic
     console.log('[AI] Calling chat function with analysis prompt...');
+    console.log('[AI] Screenplay content length:', content.length);
+    console.log('[AI] First 500 chars:', content.substring(0, 500));
 
     try {
       const response = await this.chat(analysisPrompt, context);

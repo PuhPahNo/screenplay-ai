@@ -315,20 +315,57 @@ export class ExportManager {
   }
 
   /**
-   * Create a simple PDF (minimal implementation)
-   * For production, use pdfkit or puppeteer
+   * Create a multi-page PDF
+   * Handles full screenplay export with proper pagination
    */
   private createSimplePDF(content: string, _title: string): Buffer {
-    // This creates a very basic PDF structure
-    // The text is embedded as-is without proper formatting
-    
     const textLines = content.split('\n');
-    const objectOffsets: number[] = [];
-    let currentOffset = 0;
+    const linesPerPage = 55; // Standard screenplay lines per page
+    const totalPages = Math.ceil(textLines.length / linesPerPage);
     
-    // PDF header
+    // Build page objects
+    const pageRefs: string[] = [];
+    const pageObjects: string[] = [];
+    const contentObjects: string[] = [];
+    
+    let objNum = 3; // Start after catalog and pages objects
+    
+    for (let page = 0; page < totalPages; page++) {
+      const startLine = page * linesPerPage;
+      const endLine = Math.min(startLine + linesPerPage, textLines.length);
+      const pageLines = textLines.slice(startLine, endLine);
+      
+      // Create content stream for this page
+      let stream = 'BT\n/F1 10 Tf\n72 720 Td\n12 TL\n';
+      
+      for (const line of pageLines) {
+        const escapedLine = line
+          .replace(/\\/g, '\\\\')
+          .replace(/\(/g, '\\(')
+          .replace(/\)/g, '\\)');
+        stream += `(${escapedLine}) Tj T*\n`;
+      }
+      
+      // Add page number
+      stream += `(Page ${page + 1} of ${totalPages}) Tj\n`;
+      stream += 'ET';
+      
+      const contentObjNum = objNum++;
+      const pageObjNum = objNum++;
+      
+      contentObjects.push(`${contentObjNum} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`);
+      pageObjects.push(`${pageObjNum} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentObjNum} 0 R /Resources << /Font << /F1 ${objNum} 0 R >> >> >>\nendobj\n`);
+      pageRefs.push(`${pageObjNum} 0 R`);
+    }
+    
+    // Font object
+    const fontObjNum = objNum++;
+    const fontObj = `${fontObjNum} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n`;
+    
+    // Build PDF
     let pdf = '%PDF-1.4\n';
-    currentOffset = pdf.length;
+    const objectOffsets: number[] = [];
+    let currentOffset = pdf.length;
     
     // Object 1: Catalog
     objectOffsets.push(currentOffset);
@@ -336,52 +373,35 @@ export class ExportManager {
     pdf += obj1;
     currentOffset += obj1.length;
     
-    // Object 2: Pages
+    // Object 2: Pages (with all page references)
     objectOffsets.push(currentOffset);
-    const obj2 = '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n';
+    const obj2 = `2 0 obj\n<< /Type /Pages /Kids [${pageRefs.join(' ')}] /Count ${totalPages} >>\nendobj\n`;
     pdf += obj2;
     currentOffset += obj2.length;
     
-    // Object 3: Page
-    objectOffsets.push(currentOffset);
-    const obj3 = '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n';
-    pdf += obj3;
-    currentOffset += obj3.length;
-    
-    // Object 4: Content stream
-    let stream = 'BT\n/F1 10 Tf\n72 720 Td\n12 TL\n';
-    
-    // Add text lines (limit to fit on page)
-    const maxLines = 50;
-    for (let i = 0; i < Math.min(textLines.length, maxLines); i++) {
-      const line = textLines[i]
-        .replace(/\\/g, '\\\\')
-        .replace(/\(/g, '\\(')
-        .replace(/\)/g, '\\)');
-      stream += `(${line}) Tj T*\n`;
+    // Add all content and page objects
+    for (const contentObj of contentObjects) {
+      objectOffsets.push(currentOffset);
+      pdf += contentObj;
+      currentOffset += contentObj.length;
     }
     
-    if (textLines.length > maxLines) {
-      stream += '([...continued...]) Tj T*\n';
+    for (const pageObj of pageObjects) {
+      objectOffsets.push(currentOffset);
+      pdf += pageObj;
+      currentOffset += pageObj.length;
     }
     
-    stream += 'ET';
-    
+    // Font object
     objectOffsets.push(currentOffset);
-    const obj4 = `4 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`;
-    pdf += obj4;
-    currentOffset += obj4.length;
-    
-    // Object 5: Font
-    objectOffsets.push(currentOffset);
-    const obj5 = '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n';
-    pdf += obj5;
-    currentOffset += obj5.length;
+    pdf += fontObj;
+    currentOffset += fontObj.length;
     
     // Cross-reference table
     const xrefOffset = currentOffset;
+    const totalObjects = objectOffsets.length + 1;
     pdf += 'xref\n';
-    pdf += `0 6\n`;
+    pdf += `0 ${totalObjects}\n`;
     pdf += '0000000000 65535 f \n';
     for (const offset of objectOffsets) {
       pdf += offset.toString().padStart(10, '0') + ' 00000 n \n';
@@ -389,10 +409,12 @@ export class ExportManager {
     
     // Trailer
     pdf += 'trailer\n';
-    pdf += '<< /Size 6 /Root 1 0 R >>\n';
+    pdf += `<< /Size ${totalObjects} /Root 1 0 R >>\n`;
     pdf += 'startxref\n';
     pdf += xrefOffset + '\n';
     pdf += '%%EOF';
+    
+    console.log(`[Export] Created PDF with ${totalPages} pages, ${textLines.length} lines`);
     
     return Buffer.from(pdf, 'utf8');
   }
