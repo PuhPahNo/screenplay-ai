@@ -963,23 +963,23 @@ export class AIClient {
               const lowerContent = content.toLowerCase();
               const excerpts: string[] = [];
               let searchStart = 0;
-              
+
               while (searchStart < lowerContent.length) {
                 const idx = lowerContent.indexOf(query, searchStart);
                 if (idx === -1) break;
-                
+
                 const start = Math.max(0, idx - 100);
                 const end = Math.min(content.length, idx + query.length + 100);
-                const excerpt = (start > 0 ? '...' : '') + 
-                  content.substring(start, end) + 
+                const excerpt = (start > 0 ? '...' : '') +
+                  content.substring(start, end) +
                   (end < content.length ? '...' : '');
                 excerpts.push(excerpt);
                 searchStart = idx + query.length;
-                
+
                 // Limit to 3 excerpts per scene
                 if (excerpts.length >= 3) break;
               }
-              
+
               matches.push({ scene, excerpts });
             }
           }
@@ -990,7 +990,7 @@ export class AIClient {
 
           let result = `=== SEARCH RESULTS FOR "${args.query}" ===\n`;
           result += `Found in ${matches.length} scene(s):\n\n`;
-          
+
           for (const match of matches) {
             result += `--- Scene ${match.scene.number}: ${match.scene.heading} ---\n`;
             for (const excerpt of match.excerpts) {
@@ -998,7 +998,7 @@ export class AIClient {
             }
             result += '\n';
           }
-          
+
           return result;
         }
 
@@ -1010,23 +1010,23 @@ export class AIClient {
             const pageEstimate = Math.round(wordCount / 250);
             return `=== FULL SCREENPLAY (${pageEstimate} pages, ${wordCount} words) ===\n\n${context.currentContent}\n\n=== END OF SCREENPLAY ===`;
           }
-          
+
           // Fallback: reconstruct from scenes if no direct content
           const allScenes = await this.dbManager.getScenes();
           if (allScenes.length === 0) {
             return 'No screenplay content available. The screenplay may be empty.';
           }
-          
+
           const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
           let fullContent = '=== FULL SCREENPLAY (reconstructed from scenes) ===\n\n';
-          
+
           for (const scene of sortedScenes) {
             fullContent += `${scene.heading}\n\n`;
             if (scene.content) {
               fullContent += `${scene.content}\n\n`;
             }
           }
-          
+
           fullContent += '=== END OF SCREENPLAY ===';
           return fullContent;
         }
@@ -1036,17 +1036,17 @@ export class AIClient {
           const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
           const targetNum = args.scene_number;
           const contextCount = args.context_scenes || 1;
-          
+
           const targetIdx = sortedScenes.findIndex(s => s.number === targetNum);
           if (targetIdx === -1) {
             return `Scene ${targetNum} not found. Use list_all_scenes to see available scenes.`;
           }
-          
+
           const startIdx = Math.max(0, targetIdx - contextCount);
           const endIdx = Math.min(sortedScenes.length - 1, targetIdx + contextCount);
-          
+
           let result = `=== SCENE ${targetNum} WITH CONTEXT ===\n\n`;
-          
+
           for (let i = startIdx; i <= endIdx; i++) {
             const scene = sortedScenes[i];
             const marker = i === targetIdx ? '>>> TARGET SCENE <<<' : '';
@@ -1054,7 +1054,7 @@ export class AIClient {
             result += scene.content || '(No content)';
             result += '\n\n';
           }
-          
+
           return result;
         }
 
@@ -1062,12 +1062,12 @@ export class AIClient {
           const charName = args.character_name.toUpperCase().trim();
           const allScenes = await this.dbManager.getScenes();
           const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
-          
+
           const appearances: Array<{ scene: typeof sortedScenes[0]; excerpt: string }> = [];
-          
+
           for (const scene of sortedScenes) {
             if (!scene.content) continue;
-            
+
             // Check if character appears in this scene (as dialogue or mentioned)
             const upperContent = scene.content.toUpperCase();
             if (upperContent.includes(charName)) {
@@ -1075,11 +1075,11 @@ export class AIClient {
               const lines = scene.content.split('\n');
               const relevantLines: string[] = [];
               let inDialogue = false;
-              
+
               for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
                 const upperLine = line.toUpperCase();
-                
+
                 // Check if this is the character's cue
                 if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
                   inDialogue = true;
@@ -1096,12 +1096,12 @@ export class AIClient {
                 } else if (upperLine.includes(charName) && !inDialogue) {
                   relevantLines.push(`[ACTION] ${line}`);
                 }
-                
+
                 if (line === '' || line.match(/^[A-Z]{2,}(\s|$)/)) {
                   inDialogue = false;
                 }
               }
-              
+
               if (relevantLines.length > 0) {
                 appearances.push({
                   scene,
@@ -1110,20 +1110,20 @@ export class AIClient {
               }
             }
           }
-          
+
           if (appearances.length === 0) {
             return `Character "${charName}" not found in any scenes.`;
           }
-          
+
           let result = `=== CHARACTER ARC: ${charName} ===\n`;
           result += `Appears in ${appearances.length} scene(s)\n\n`;
-          
+
           for (const app of appearances) {
             result += `--- Scene ${app.scene.number}: ${app.scene.heading} ---\n`;
             result += app.excerpt;
             result += '\n\n';
           }
-          
+
           return result;
         }
 
@@ -1131,19 +1131,19 @@ export class AIClient {
           const charName = args.character_name.toUpperCase().trim();
           const allScenes = await this.dbManager.getScenes();
           const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
-          
+
           const dialogues: Array<{ sceneNum: number; heading: string; dialogue: string[] }> = [];
-          
+
           for (const scene of sortedScenes) {
             if (!scene.content) continue;
-            
+
             const lines = scene.content.split('\n');
             const sceneDialogues: string[] = [];
-            
+
             for (let i = 0; i < lines.length; i++) {
               const line = lines[i].trim();
               const upperLine = line.toUpperCase();
-              
+
               // Check if this is the character's cue
               if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
                 // Collect their dialogue
@@ -1166,7 +1166,7 @@ export class AIClient {
                 }
               }
             }
-            
+
             if (sceneDialogues.length > 0) {
               dialogues.push({
                 sceneNum: scene.number,
@@ -1175,14 +1175,14 @@ export class AIClient {
               });
             }
           }
-          
+
           if (dialogues.length === 0) {
             return `No dialogue found for "${charName}".`;
           }
-          
+
           let result = `=== ALL DIALOGUE BY ${charName} ===\n`;
           result += `Found dialogue in ${dialogues.length} scene(s)\n\n`;
-          
+
           for (const d of dialogues) {
             result += `--- Scene ${d.sceneNum}: ${d.heading} ---\n`;
             for (const line of d.dialogue) {
@@ -1190,7 +1190,7 @@ export class AIClient {
             }
             result += '\n';
           }
-          
+
           return result;
         }
 
@@ -1198,30 +1198,30 @@ export class AIClient {
           const sceneNum = args.scene_number;
           const allScenes = await this.dbManager.getScenes();
           const scene = allScenes.find(s => s.number === sceneNum);
-          
+
           if (!scene) {
             return `Scene ${sceneNum} not found.`;
           }
-          
+
           if (!scene.content) {
             return `Scene ${sceneNum} has no content.`;
           }
-          
+
           // Extract all characters who speak in this scene
           const lines = scene.content.split('\n');
           const characterData: Map<string, { dialogueCount: number; lines: string[] }> = new Map();
-          
+
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            
+
             // Character cue pattern: ALL CAPS, possibly with extension
             const charMatch = line.match(/^([A-Z][A-Z\s'-]+)(\s*\([^)]+\))?$/);
             if (charMatch && line.length < 40) {
               const charName = charMatch[1].trim();
-              
+
               // Skip scene headings and transitions
               if (charName.match(/^(INT|EXT|CUT|FADE|DISSOLVE)/)) continue;
-              
+
               // Get their dialogue
               let dialogue = '';
               for (let j = i + 1; j < lines.length; j++) {
@@ -1234,7 +1234,7 @@ export class AIClient {
                   dialogue += nextLine + ' ';
                 }
               }
-              
+
               if (!characterData.has(charName)) {
                 characterData.set(charName, { dialogueCount: 0, lines: [] });
               }
@@ -1245,15 +1245,15 @@ export class AIClient {
               }
             }
           }
-          
+
           let result = `=== SCENE ${sceneNum} CHARACTER ANALYSIS ===\n`;
           result += `${scene.heading}\n\n`;
-          
+
           if (characterData.size === 0) {
             result += 'No speaking characters detected in this scene.';
           } else {
             result += `Speaking characters: ${characterData.size}\n\n`;
-            
+
             for (const [name, data] of characterData) {
               result += `**${name}** (${data.dialogueCount} line(s)):\n`;
               for (const line of data.lines.slice(0, 3)) {
@@ -1262,13 +1262,13 @@ export class AIClient {
               result += '\n';
             }
           }
-          
+
           return result;
         }
 
         case 'find_plot_events': {
           const eventType = args.event_type.toLowerCase();
-          
+
           // Keywords associated with different event types
           const eventKeywords: Record<string, string[]> = {
             'death': ['dies', 'dead', 'kill', 'killed', 'murder', 'shot', 'stabbed', 'falls dead', 'body', 'corpse', 'funeral', 'death'],
@@ -1280,25 +1280,25 @@ export class AIClient {
             'departure': ['leaves', 'exits', 'walks out', 'departs', 'drives away', 'runs off'],
             'phone': ['phone', 'calls', 'text', 'message', 'rings', 'answers'],
           };
-          
+
           const keywords = eventKeywords[eventType] || [eventType];
-          
+
           const allScenes = await this.dbManager.getScenes();
           const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
-          
+
           const matches: Array<{ scene: typeof sortedScenes[0]; excerpts: string[] }> = [];
-          
+
           for (const scene of sortedScenes) {
             if (!scene.content) continue;
-            
+
             const lowerContent = scene.content.toLowerCase();
             const foundKeywords = keywords.filter(kw => lowerContent.includes(kw));
-            
+
             if (foundKeywords.length > 0) {
               // Extract context around matches
               const excerpts: string[] = [];
               const lines = scene.content.split('\n');
-              
+
               for (let i = 0; i < lines.length; i++) {
                 const lowerLine = lines[i].toLowerCase();
                 if (foundKeywords.some(kw => lowerLine.includes(kw))) {
@@ -1311,27 +1311,27 @@ export class AIClient {
                   }
                 }
               }
-              
+
               if (excerpts.length > 0) {
                 matches.push({ scene, excerpts: excerpts.slice(0, 3) });
               }
             }
           }
-          
+
           if (matches.length === 0) {
             return `No "${eventType}" events found in the screenplay. Try different keywords or use search_screenplay for custom searches.`;
           }
-          
+
           let result = `=== "${eventType.toUpperCase()}" EVENTS FOUND ===\n`;
           result += `Found in ${matches.length} scene(s)\n\n`;
-          
+
           for (const match of matches) {
             result += `--- Scene ${match.scene.number}: ${match.scene.heading} ---\n`;
             for (const excerpt of match.excerpts) {
               result += `"${excerpt}"\n\n`;
             }
           }
-          
+
           return result;
         }
 
