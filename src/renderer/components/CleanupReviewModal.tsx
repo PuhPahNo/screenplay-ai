@@ -400,79 +400,82 @@ export function CleanupReviewModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-zinc-700">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
-          >
-            Cancel
-          </button>
-          
-          <div className="flex gap-2">
-            {!isAnalyzing && !error && (
+        <div className="border-t border-zinc-700 p-4">
+          {/* Top row: Selection controls */}
+          {suggestions.length > 0 && (
+            <div className="flex items-center justify-center gap-4 mb-4 pb-4 border-b border-zinc-800">
               <button
-                onClick={analyzeWithLLM}
-                className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
+                onClick={() => setSelectedSuggestions(new Set())}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors rounded hover:bg-zinc-800"
               >
-                <RefreshCw className="w-4 h-4" />
-                Re-analyze
+                Clear All
               </button>
-            )}
-            
-            {suggestions.length > 0 && (
-              <>
-                <button
-                  onClick={() => setSelectedSuggestions(new Set())}
-                  className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
-                >
-                  Clear All
-                </button>
-                <button
-                  onClick={() => setSelectedSuggestions(new Set(suggestions.map((_, i) => i)))}
-                  className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
-                >
-                  Select All
-                </button>
-              </>
-            )}
-            
-            {llmAnalysis && onSyncFromLLM && (
               <button
-                onClick={handleSyncAll}
-                disabled={isSyncing}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                onClick={() => setSelectedSuggestions(new Set(suggestions.map((_, i) => i)))}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors rounded hover:bg-zinc-800"
               >
-                {isSyncing ? (
+                Select All
+              </button>
+              {!isAnalyzing && !error && (
+                <button
+                  onClick={analyzeWithLLM}
+                  className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors rounded hover:bg-zinc-800 flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Re-analyze
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Bottom row: Action buttons */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors rounded hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+            
+            <div className="flex gap-3">
+              {llmAnalysis && onSyncFromLLM && (
+                <button
+                  onClick={handleSyncAll}
+                  disabled={isSyncing}
+                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-purple-600/20"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Sync All
+                    </>
+                  )}
+                </button>
+              )}
+              
+              <button
+                onClick={handleApply}
+                disabled={isApplying || selectedSuggestions.size === 0}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-blue-600/20"
+              >
+                {isApplying ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Syncing...
+                    Applying...
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
-                    Sync All from AI
+                    <Check className="w-4 h-4" />
+                    Apply ({selectedSuggestions.size})
                   </>
                 )}
               </button>
-            )}
-            
-            <button
-              onClick={handleApply}
-              disabled={isApplying || selectedSuggestions.size === 0}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isApplying ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Applying...
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  Apply Selected ({selectedSuggestions.size})
-                </>
-              )}
-            </button>
+            </div>
           </div>
         </div>
       </div>

@@ -943,11 +943,8 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
   }
 
   /**
-   * LLM-powered screenplay analysis for accurate character and scene detection.
-   * Uses GPT to intelligently parse the screenplay and identify:
-   * - Scene headings (even non-standard ones)
-   * - Characters (with duplicate detection and normalization)
-   * - Title page information
+   * LLM-powered screenplay analysis using TOOLS for accurate character and scene detection.
+   * Uses the agentic approach - GPT calls tools to create characters and scenes directly.
    */
   async analyzeScreenplayContent(content: string): Promise<{
     title?: string;
@@ -973,203 +970,272 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
       reason: string;
     }>;
   }> {
-    console.log('[AI] Starting LLM screenplay analysis...');
+    console.log('[AI] Starting LLM screenplay analysis with tools...');
     
-    // Split content into chunks if it's very long (to avoid token limits)
-    const MAX_CHUNK_SIZE = 30000; // characters
-    const chunks: string[] = [];
-    
-    if (content.length > MAX_CHUNK_SIZE) {
-      // Split by scene headings to maintain context
-      const lines = content.split('\n');
-      let currentChunk = '';
-      
-      for (const line of lines) {
-        if (currentChunk.length + line.length > MAX_CHUNK_SIZE && currentChunk.length > 0) {
-          chunks.push(currentChunk);
-          currentChunk = line;
-        } else {
-          currentChunk += (currentChunk ? '\n' : '') + line;
-        }
-      }
-      if (currentChunk) chunks.push(currentChunk);
-    } else {
-      chunks.push(content);
-    }
-
-    console.log(`[AI] Processing ${chunks.length} chunk(s)...`);
-
-    // Process each chunk and aggregate results
-    const allScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
-    const characterMap = new Map<string, { name: string; dialogueCount: number; firstAppearance: number; aliases: Set<string> }>();
-    let title: string | undefined;
-    let author: string | undefined;
+    // Collect results from tool calls
+    const detectedScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
+    const detectedCharacters: Array<{ name: string; normalizedName: string; aliases: string[]; dialogueCount: number; firstAppearance: number }> = [];
+    const detectedDuplicates: Array<{ names: string[]; suggestedName: string; reason: string }> = [];
+    let detectedTitle: string | undefined;
+    let detectedAuthor: string | undefined;
     let sceneCounter = 0;
-    let lineOffset = 0;
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      console.log(`[AI] Analyzing chunk ${i + 1}/${chunks.length}...`);
+    // Define tools for screenplay analysis
+    const analysisTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'add_detected_character',
+          description: 'Add a character that was detected in the screenplay. Call this for EVERY character who has dialogue.',
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Character name in UPPERCASE (e.g., JOHN, SARAH, DR. SMITH)' },
+              dialogueCount: { type: 'number', description: 'Approximate number of times this character speaks' },
+              firstAppearanceLine: { type: 'number', description: 'Approximate line number of first appearance' },
+              description: { type: 'string', description: 'Brief description if apparent from context' },
+            },
+            required: ['name', 'dialogueCount'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_detected_scene',
+          description: 'Add a scene heading that was detected in the screenplay. Call this for EVERY scene.',
+          parameters: {
+            type: 'object',
+            properties: {
+              heading: { type: 'string', description: 'Full scene heading (e.g., INT. COFFEE SHOP - DAY)' },
+              location: { type: 'string', description: 'Location name extracted from heading' },
+              timeOfDay: { type: 'string', description: 'Time of day (DAY, NIGHT, DUSK, DAWN, CONTINUOUS, etc.)' },
+              lineNumber: { type: 'number', description: 'Approximate line number' },
+            },
+            required: ['heading', 'location'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'report_duplicate_characters',
+          description: 'Report potential duplicate character names (same person with different spellings)',
+          parameters: {
+            type: 'object',
+            properties: {
+              names: { type: 'array', items: { type: 'string' }, description: 'Array of character name variants' },
+              suggestedName: { type: 'string', description: 'The recommended canonical name to use' },
+              reason: { type: 'string', description: 'Why these are likely the same character' },
+            },
+            required: ['names', 'suggestedName', 'reason'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'set_title_info',
+          description: 'Set the screenplay title and author if found in title page',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Screenplay title' },
+              author: { type: 'string', description: 'Author name' },
+            },
+            required: [],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'analysis_complete',
+          description: 'Call this when you have finished analyzing the entire screenplay',
+          parameters: {
+            type: 'object',
+            properties: {
+              totalCharacters: { type: 'number', description: 'Total characters found' },
+              totalScenes: { type: 'number', description: 'Total scenes found' },
+            },
+            required: ['totalCharacters', 'totalScenes'],
+          },
+        },
+      },
+    ];
+
+    // Truncate content if too long (keep first 50k chars for context)
+    const truncatedContent = content.length > 50000 
+      ? content.substring(0, 50000) + '\n\n[... screenplay continues ...]'
+      : content;
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: `You are a professional screenplay analyzer. Your job is to read the screenplay and use the provided tools to register EVERY character and scene you find.
+
+CRITICAL INSTRUCTIONS:
+1. Call add_detected_character for EVERY character who speaks (has dialogue)
+2. Call add_detected_scene for EVERY scene heading (INT./EXT. lines)
+3. Call report_duplicate_characters if you find name variations (e.g., O'KEEFE vs O'KEEFFE)
+4. Call set_title_info if you find a title page
+5. Call analysis_complete when done
+
+CHARACTER DETECTION:
+- Character names appear in ALL CAPS on their own line before dialogue
+- Strip extensions like (V.O.), (O.S.), (CONT'D) to get the base name
+- IGNORE non-character uppercase: FADE IN, CUT TO, THE END, SUPER, INTERCUT, etc.
+- A character must have dialogue to be counted
+
+SCENE DETECTION:
+- Scene headings start with: INT., EXT., INT./EXT., I/E, EST.
+- Can have ! or . prefix for forced headings
+- Include location and time of day
+
+Be thorough! Find ALL characters and scenes. Do not skip any.`,
+      },
+      {
+        role: 'user',
+        content: `Analyze this screenplay. Use the tools to register every character and scene you find:\n\n${truncatedContent}`,
+      },
+    ];
+
+    let continueLoop = true;
+    let iterations = 0;
+    const maxIterations = 20; // Safety limit
+
+    while (continueLoop && iterations < maxIterations) {
+      iterations++;
+      console.log(`[AI] Analysis iteration ${iterations}...`);
 
       try {
         const completion = await this.openai.chat.completions.create({
-          model: 'gpt-5-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a professional screenplay parser. Analyze the provided screenplay text and extract structured data.
-
-IMPORTANT RULES:
-1. Scene headings start with INT., EXT., INT./EXT., I/E, EST., or can be forced with . or ! prefix
-2. Scene headings may include location and time of day (DAY, NIGHT, DUSK, DAWN, CONTINUOUS, etc.)
-3. Character names appear in ALL CAPS on their own line before dialogue
-4. Character names may have extensions like (V.O.), (O.S.), (CONT'D)
-5. Watch for duplicate characters - same person with different spellings (O'KEEFE vs O'KEEFFE)
-6. Ignore generic uppercase words that aren't character names (FADE IN, CUT TO, THE END, etc.)
-7. If you see a title page (Title:, Author:, etc.), extract that information
-
-Return ONLY valid JSON with this exact structure:
-{
-  "title": "string or null",
-  "author": "string or null", 
-  "scenes": [
-    {
-      "heading": "FULL SCENE HEADING TEXT",
-      "location": "Location name",
-      "timeOfDay": "DAY/NIGHT/etc",
-      "approximateLineNumber": 123
-    }
-  ],
-  "characters": [
-    {
-      "name": "CHARACTER NAME (normalized, uppercase)",
-      "variants": ["variant1", "variant2"],
-      "dialogueCount": 5,
-      "approximateFirstLine": 45
-    }
-  ],
-  "potentialDuplicates": [
-    {
-      "names": ["O'KEEFE", "O'KEEFFE"],
-      "suggestedName": "O'KEEFE",
-      "reason": "Same character with different spelling"
-    }
-  ]
-}`
-            },
-            {
-              role: 'user',
-              content: `Analyze this screenplay text and extract all scenes and characters:\n\n${chunk}`
-            }
-          ],
-          temperature: 0.1, // Low temperature for consistent parsing
+          model: 'gpt-4o-mini',
+          messages,
+          tools: analysisTools,
+          tool_choice: 'auto',
           max_completion_tokens: 4000,
-          response_format: { type: 'json_object' },
         });
 
-        const response = completion.choices[0]?.message?.content || '{}';
-        const parsed = JSON.parse(response);
-
-        // Extract title/author from first chunk
-        if (i === 0) {
-          title = parsed.title || undefined;
-          author = parsed.author || undefined;
+        const responseMessage = completion.choices[0]?.message;
+        
+        if (!responseMessage) {
+          console.error('[AI] No response message');
+          break;
         }
 
-        // Add scenes with adjusted line numbers
-        if (parsed.scenes && Array.isArray(parsed.scenes)) {
-          for (const scene of parsed.scenes) {
-            sceneCounter++;
-            allScenes.push({
-              number: sceneCounter,
-              heading: scene.heading || '',
-              location: scene.location || '',
-              timeOfDay: scene.timeOfDay || '',
-              lineNumber: (scene.approximateLineNumber || 0) + lineOffset,
+        // Add assistant message to history
+        messages.push(responseMessage);
+
+        // Process tool calls
+        if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+          console.log(`[AI] Processing ${responseMessage.tool_calls.length} tool calls...`);
+          
+          for (const toolCall of responseMessage.tool_calls) {
+            const functionName = toolCall.function.name;
+            let args: Record<string, unknown>;
+            
+            try {
+              args = JSON.parse(toolCall.function.arguments);
+            } catch {
+              console.error('[AI] Failed to parse tool arguments:', toolCall.function.arguments);
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: 'Error: Invalid JSON arguments',
+              });
+              continue;
+            }
+
+            console.log(`[AI] Tool call: ${functionName}`, args);
+
+            let result = 'OK';
+
+            switch (functionName) {
+              case 'add_detected_character': {
+                const name = (args.name as string || '').toUpperCase().trim();
+                if (name && !detectedCharacters.some(c => c.normalizedName === name)) {
+                  detectedCharacters.push({
+                    name,
+                    normalizedName: name,
+                    aliases: [],
+                    dialogueCount: (args.dialogueCount as number) || 1,
+                    firstAppearance: (args.firstAppearanceLine as number) || 0,
+                  });
+                  result = `Added character: ${name}`;
+                } else {
+                  result = `Character ${name} already added or invalid`;
+                }
+                break;
+              }
+
+              case 'add_detected_scene': {
+                sceneCounter++;
+                detectedScenes.push({
+                  number: sceneCounter,
+                  heading: (args.heading as string) || '',
+                  location: (args.location as string) || '',
+                  timeOfDay: (args.timeOfDay as string) || '',
+                  lineNumber: (args.lineNumber as number) || 0,
+                });
+                result = `Added scene ${sceneCounter}: ${args.heading}`;
+                break;
+              }
+
+              case 'report_duplicate_characters': {
+                detectedDuplicates.push({
+                  names: (args.names as string[]) || [],
+                  suggestedName: (args.suggestedName as string) || '',
+                  reason: (args.reason as string) || '',
+                });
+                result = `Recorded duplicate: ${(args.names as string[])?.join(', ')}`;
+                break;
+              }
+
+              case 'set_title_info': {
+                if (args.title) detectedTitle = args.title as string;
+                if (args.author) detectedAuthor = args.author as string;
+                result = `Set title: ${args.title}, author: ${args.author}`;
+                break;
+              }
+
+              case 'analysis_complete': {
+                console.log(`[AI] Analysis complete: ${args.totalCharacters} characters, ${args.totalScenes} scenes reported`);
+                result = 'Analysis complete';
+                continueLoop = false;
+                break;
+              }
+
+              default:
+                result = `Unknown function: ${functionName}`;
+            }
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: result,
             });
           }
+        } else {
+          // No more tool calls - we're done
+          console.log('[AI] No more tool calls, ending analysis');
+          continueLoop = false;
         }
-
-        // Aggregate characters
-        if (parsed.characters && Array.isArray(parsed.characters)) {
-          for (const char of parsed.characters) {
-            const normalizedName = (char.name || '').toUpperCase().trim();
-            if (!normalizedName) continue;
-
-            const existing = characterMap.get(normalizedName);
-            if (existing) {
-              existing.dialogueCount += char.dialogueCount || 0;
-              if (char.variants) {
-                char.variants.forEach((v: string) => existing.aliases.add(v.toUpperCase().trim()));
-              }
-            } else {
-              characterMap.set(normalizedName, {
-                name: normalizedName,
-                dialogueCount: char.dialogueCount || 0,
-                firstAppearance: (char.approximateFirstLine || 0) + lineOffset,
-                aliases: new Set(char.variants?.map((v: string) => v.toUpperCase().trim()) || []),
-              });
-            }
-          }
-        }
-
-        // Track line offset for next chunk
-        lineOffset += chunk.split('\n').length;
 
       } catch (error) {
-        console.error(`[AI] Error analyzing chunk ${i + 1}:`, error);
-        // Continue with other chunks
+        console.error('[AI] Error in analysis iteration:', error);
+        throw new Error(`Screenplay analysis failed: ${error}`);
       }
     }
 
-    // Find duplicates across the full character set
-    const duplicates: Array<{ names: string[]; suggestedName: string; reason: string }> = [];
-    const characterNames = Array.from(characterMap.keys());
-    const processedPairs = new Set<string>();
-
-    for (let i = 0; i < characterNames.length; i++) {
-      for (let j = i + 1; j < characterNames.length; j++) {
-        const name1 = characterNames[i];
-        const name2 = characterNames[j];
-        const pairKey = [name1, name2].sort().join('|');
-        
-        if (processedPairs.has(pairKey)) continue;
-        processedPairs.add(pairKey);
-
-        // Check for similar names (likely duplicates)
-        if (this.areSimilarNames(name1, name2)) {
-          const char1 = characterMap.get(name1)!;
-          const char2 = characterMap.get(name2)!;
-          
-          // Suggest the one with more dialogue as the canonical name
-          const suggestedName = char1.dialogueCount >= char2.dialogueCount ? name1 : name2;
-          
-          duplicates.push({
-            names: [name1, name2],
-            suggestedName,
-            reason: 'Similar character names - likely the same person',
-          });
-        }
-      }
-    }
-
-    // Convert character map to array
-    const characters = Array.from(characterMap.entries()).map(([name, data]) => ({
-      name: data.name,
-      normalizedName: name,
-      aliases: Array.from(data.aliases),
-      dialogueCount: data.dialogueCount,
-      firstAppearance: data.firstAppearance,
-    }));
-
-    console.log(`[AI] Analysis complete: ${allScenes.length} scenes, ${characters.length} characters, ${duplicates.length} potential duplicates`);
+    console.log(`[AI] Analysis complete: ${detectedScenes.length} scenes, ${detectedCharacters.length} characters, ${detectedDuplicates.length} duplicates`);
 
     return {
-      title,
-      author,
-      scenes: allScenes,
-      characters,
-      duplicates,
+      title: detectedTitle,
+      author: detectedAuthor,
+      scenes: detectedScenes,
+      characters: detectedCharacters,
+      duplicates: detectedDuplicates,
     };
   }
 
