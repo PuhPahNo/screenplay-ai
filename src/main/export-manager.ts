@@ -60,7 +60,7 @@ export class ExportManager {
    */
   async exportToText(
     scenes: Scene[],
-    _characters: Character[],
+    characters: Character[],
     outputPath: string,
     options: ExportOptions = {}
   ): Promise<void> {

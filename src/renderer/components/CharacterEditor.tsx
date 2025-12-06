@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useState, memo, useCallback } from 'react';
 import { X, Save, Plus, Trash2, User } from 'lucide-react';
 import type { Character } from '../../shared/types';
 
@@ -18,7 +18,6 @@ function CharacterEditor({
   onClose,
 }: CharacterEditorProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const initialCharacterRef = useRef(character);
   
   // Initialize edited character only once, not on every render
   const [editedCharacter, setEditedCharacter] = useState<Character>(() => 

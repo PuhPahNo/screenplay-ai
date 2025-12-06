@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  GitBranch, Plus, Trash2, RotateCcw, Eye, X, 
+  GitBranch, Plus, Trash2, RotateCcw, X, 
   Clock, ChevronRight, ChevronDown, FileText
 } from 'lucide-react';
 import type { VersionSummary, Version } from '../../shared/types';

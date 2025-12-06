@@ -27,7 +27,7 @@ export default function Editor() {
     applyEdit,
     rejectEdit,
     characters,
-    scenes,
+    scenes, // Legacy DB scenes - kept for backward compatibility with cleanup modal
     loadCharacters,
     loadScenes,
     screenplayAuthor,
@@ -215,9 +215,10 @@ export default function Editor() {
     }
   };
 
-  const handleSceneClick = useCallback((sceneStartLine: number) => {
+  // Handle scene click from ScenePanel - receives zero-based line index from SceneIndexer
+  const handleSceneClick = useCallback((sceneStartLineIndex: number) => {
     if (editorRef.current) {
-      editorRef.current.scrollToLine(sceneStartLine);
+      editorRef.current.scrollToLine(sceneStartLineIndex);
     }
   }, []);
 
@@ -320,6 +321,7 @@ export default function Editor() {
               backstory: '',
               goals: '',
               role: '',
+              relationships: {},
             };
             await window.api.db.saveCharacter(newCharacter);
             addedCount++;
@@ -378,10 +380,19 @@ export default function Editor() {
           // Add new scene detected by AI
           for (const sceneHeading of suggestion.items) {
             console.log('[Cleanup] Adding new scene:', sceneHeading);
+            // Parse location and time from heading
+            const headingUpper = sceneHeading.toUpperCase();
+            const withoutPrefix = headingUpper.replace(/^(INT|EXT|INT\.\/EXT|INT\/EXT|I\/E|EST)[\.\s]*/i, '');
+            const parts = withoutPrefix.split(/\s*[-–—]\s*/);
+            const location = parts[0]?.trim() || '';
+            const timeOfDay = parts[1]?.trim() || '';
+            
             const newScene = {
               id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               number: currentScenes.length + 1 + addedCount,
-              heading: sceneHeading.toUpperCase(),
+              heading: headingUpper,
+              location,
+              timeOfDay,
               content: '',
               startLine: 0,
               endLine: 0,
@@ -441,6 +452,7 @@ export default function Editor() {
         backstory: '',
         goals: '',
         role: '',
+        relationships: {},
       };
       await window.api.db.saveCharacter(newCharacter);
     }
@@ -451,6 +463,8 @@ export default function Editor() {
         id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         number: llmScene.number,
         heading: llmScene.heading.toUpperCase(),
+        location: llmScene.location || '',
+        timeOfDay: llmScene.timeOfDay || '',
         content: '',
         startLine: llmScene.lineNumber,
         endLine: llmScene.lineNumber,

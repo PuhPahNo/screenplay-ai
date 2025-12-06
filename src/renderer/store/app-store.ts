@@ -11,6 +11,7 @@ import type {
   PendingEdit,
   Conversation
 } from '../../shared/types';
+import { SceneIndexer, type IndexedScene } from '../../screenplay/scene-indexer';
 
 export interface UpdateState {
   status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
@@ -31,7 +32,10 @@ interface AppState {
   screenplayAuthor: string | null;
   screenplayTitle: string | null;
   characters: Character[];
+  /** @deprecated Use parsedScenes for navigation/counts. DB scenes kept for metadata only. */
   scenes: Scene[];
+  /** Parsed scenes from screenplay content - single source of truth for navigation */
+  parsedScenes: IndexedScene[];
   storyline: Storyline | null;
   aiHistory: AIMessage[];
 
@@ -64,9 +68,12 @@ interface AppState {
   setScreenplayAuthor: (author: string | null) => void;
   setScreenplayTitle: (title: string | null) => void;
   setCharacters: (characters: Character[]) => void;
+  /** @deprecated Use reindexScenes instead for navigation. Only for legacy DB scene updates. */
   setScenes: (scenes: Scene[]) => void;
   setStoryline: (storyline: Storyline | null) => void;
   setAIHistory: (history: AIMessage[]) => void;
+  /** Recompute parsedScenes from current screenplayContent */
+  reindexScenes: () => void;
 
   setTheme: (theme: 'light' | 'dark') => void;
   setIsSettingsOpen: (open: boolean) => void;
@@ -122,7 +129,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   screenplayAuthor: null,
   screenplayTitle: null,
   characters: [],
-  scenes: [],
+  scenes: [], // Legacy DB scenes - deprecated for navigation
+  parsedScenes: [], // Single source of truth for scene navigation
   storyline: null,
   aiHistory: [],
   conversations: [],
@@ -145,13 +153,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Setters
   setCurrentProject: (project) => set({ currentProject: project }),
-  setScreenplayContent: (content) => set({ screenplayContent: content }),
+  setScreenplayContent: (content) => {
+    set({ screenplayContent: content });
+    // Reindex scenes whenever content changes
+    get().reindexScenes();
+  },
   setScreenplayAuthor: (author) => set({ screenplayAuthor: author }),
   setScreenplayTitle: (title) => set({ screenplayTitle: title }),
   setCharacters: (characters) => set({ characters }),
-  setScenes: (scenes) => set({ scenes }),
+  setScenes: (scenes) => set({ scenes }), // Legacy - deprecated for navigation
   setStoryline: (storyline) => set({ storyline }),
   setAIHistory: (aiHistory) => set({ aiHistory }),
+  
+  // Recompute parsedScenes from screenplay content
+  reindexScenes: () => {
+    const { screenplayContent } = get();
+    const parsedScenes = SceneIndexer.indexScenes(screenplayContent);
+    console.log('[Store] Reindexed scenes:', parsedScenes.length);
+    set({ parsedScenes });
+  },
 
   setTheme: (theme) => {
     if (theme === 'dark') {
@@ -267,12 +287,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       await window.api.project.save(screenplayContent);
       console.log('[Store] Screenplay file saved successfully');
 
-      // Re-parse and update database
+      // Reindex parsed scenes (single source of truth for navigation)
+      get().reindexScenes();
+
+      // LEGACY: Re-parse and update database scenes (for metadata/backup only, not navigation)
+      // Scene navigation and counts now use parsedScenes from SceneIndexer
       const parsed = await window.api.parse.fountain(screenplayContent);
 
-      // Get current scenes to check for existing ones
+      // Get current DB scenes to check for existing ones (legacy metadata)
       const currentScenes = get().scenes;
-      console.log('[Store] Merging scenes. Current:', currentScenes.length, 'Parsed:', parsed.scenes.length);
+      console.log('[Store] Merging legacy DB scenes. Current:', currentScenes.length, 'Parsed:', parsed.scenes.length);
 
       // INTELLIGENT MERGE: Match parsed scenes with existing scenes by Number OR Heading
       const mergedScenes = parsed.scenes.map(parsedScene => {
@@ -363,6 +387,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const content = await window.api.project.load();
       set({ screenplayContent: content });
+      // Reindex scenes from loaded content
+      get().reindexScenes();
     } catch (error) {
       console.error('Failed to load screenplay:', error);
       throw error;
@@ -418,7 +444,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendAIMessage: async (message) => {
     try {
-      const { screenplayContent, characters, scenes, storyline, currentConversationId, chatMode } = get();
+      const { screenplayContent, characters, parsedScenes, storyline, currentConversationId, chatMode } = get();
 
       // Ensure we have a conversation
       let conversationId = currentConversationId;
@@ -434,9 +460,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Older context is summarized in conversationSummary
       const recentHistory = get().aiHistory.slice(-10);
       
+      // Convert IndexedScenes to Scene format for AI context
+      // Use parsedScenes (from SceneIndexer) as the single source of truth
+      const scenesForContext = parsedScenes.map(ps => ({
+        id: ps.id,
+        number: ps.number,
+        heading: ps.heading,
+        location: ps.location,
+        timeOfDay: ps.timeOfDay,
+        summary: ps.summary,
+        characters: ps.characters,
+        startLine: ps.startLineIndex,
+        endLine: ps.endLineIndex,
+        content: ps.content,
+      }));
+      
       const context: AIContext = {
         characters,
-        scenes,
+        scenes: scenesForContext, // Use parsed scenes, not DB scenes
         storyline: storyline || undefined,
         currentContent: screenplayContent,
         history: recentHistory, // Only recent messages, not full history
@@ -448,8 +489,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log('[AppStore] Sending AI context:', {
         charactersCount: characters.length,
         characterNames: characters.map(c => c.name),
-        scenesCount: scenes.length,
-        sceneHeadings: scenes.map(s => s.heading),
+        scenesCount: scenesForContext.length,
+        sceneHeadings: scenesForContext.map(s => s.heading),
         historyCount: recentHistory.length,
         totalHistoryCount: get().aiHistory.length,
         contentLength: screenplayContent?.length || 0,

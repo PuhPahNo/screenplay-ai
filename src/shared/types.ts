@@ -42,6 +42,8 @@ export interface Scene {
   order?: number; // Manual scene ordering
   duration?: string; // Estimated scene duration
   tags?: string[]; // Scene tags/categories
+  mood?: string; // Scene mood/tone
+  notes?: string; // Additional notes
 }
 
 export interface Storyline {
@@ -226,6 +228,7 @@ export interface BackupInfo {
 export interface ExportOptions {
   title?: string;
   author?: string;
+  content?: string;
   includeSceneNumbers?: boolean;
   includeCharacterList?: boolean;
 }
@@ -274,6 +277,30 @@ export interface WindowAPI {
     expandScene: (outline: string) => Promise<string>;
     analyzeStoryline: () => Promise<any>;
     summarizeConversation: (conversationId: string) => Promise<SummarizationResult>;
+    analyzeScreenplay: (content: string) => Promise<{
+      title?: string;
+      author?: string;
+      scenes: Array<{
+        number: number;
+        heading: string;
+        location: string;
+        timeOfDay: string;
+        lineNumber: number;
+      }>;
+      characters: Array<{
+        name: string;
+        normalizedName: string;
+        aliases: string[];
+        dialogueCount: number;
+        firstAppearance: number;
+        description?: string;
+      }>;
+      duplicates: Array<{
+        names: string[];
+        suggestedName: string;
+        reason: string;
+      }>;
+    }>;
   };
 
   settings: {

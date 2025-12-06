@@ -21,7 +21,12 @@ interface CursorPosition {
 }
 
 export interface ScreenplayEditorHandle {
-  scrollToLine: (lineNumber: number) => void;
+  /**
+   * Scroll to a specific line by its zero-based index.
+   * This matches the data-line-index attribute on each line div,
+   * and corresponds to Scene.startLineIndex from SceneIndexer.
+   */
+  scrollToLine: (lineIndex: number) => void;
   applyFormat: (type: ElementType) => void;
 }
 
@@ -45,7 +50,7 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
   const editorRef = useRef<HTMLDivElement>(null);
   const [lineCount, setLineCount] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
+  const [_activeLineIndex, setActiveLineIndex] = useState<number | null>(null);
   const isUpdatingRef = useRef(false);
   const lastValueRef = useRef(value);
 
@@ -475,12 +480,17 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
     console.log('[ScreenplayEditor] Props changed - value length:', value?.length, 'currentElement:', currentElement);
   }, [value, currentElement]);
 
-  // Expose scrollToLine method to parent components
-  const scrollToLine = useCallback((lineNumber: number) => {
+  /**
+   * Scroll to a line by its zero-based index (matches data-line-index attribute).
+   * Use Scene.startLineIndex from SceneIndexer for scene navigation.
+   */
+  const scrollToLine = useCallback((lineIndex: number) => {
     if (!editorRef.current) return;
 
-    const lineElement = editorRef.current.querySelector(`[data-line-index="${lineNumber}"]`);
+    console.log('[ScreenplayEditor] scrollToLine called with lineIndex:', lineIndex);
+    const lineElement = editorRef.current.querySelector(`[data-line-index="${lineIndex}"]`);
     if (lineElement) {
+      console.log('[ScreenplayEditor] Found line element, scrolling to:', lineElement.textContent?.substring(0, 50));
       lineElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
       // Highlight the line briefly
@@ -488,6 +498,8 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
       setTimeout(() => {
         lineElement.classList.remove('highlight-line');
       }, 2000);
+    } else {
+      console.warn('[ScreenplayEditor] No line element found for index:', lineIndex);
     }
   }, []);
 

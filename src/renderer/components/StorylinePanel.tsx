@@ -2,7 +2,7 @@ import { useAppStore } from '../store/app-store';
 import { BarChart3 } from 'lucide-react';
 
 export default function StorylinePanel() {
-  const { storyline, analyzeStoryline, globalSettings } = useAppStore();
+  const { storyline, analyzeStoryline } = useAppStore();
 
   const handleAnalyze = async () => {
     try {

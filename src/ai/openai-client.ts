@@ -420,8 +420,8 @@ export class AIClient {
         messages,
         // Only include tools in agent mode
         ...(isAgentMode && {
-        tools,
-        tool_choice: 'auto',
+          tools,
+          tool_choice: 'auto',
           parallel_tool_calls: true,
         }),
         max_completion_tokens: 4000,
@@ -609,21 +609,21 @@ export class AIClient {
             return `Character "${charName}" already exists - skipping duplicate`;
           }
 
-                const newCharacter = {
-                  id: uuidv4(),
+          const newCharacter = {
+            id: uuidv4(),
             name: charName,
             description: args.description || '',
             age: args.age || '',
             occupation: args.occupation || '',
-                  personality: args.personality || '',
-                  goals: args.goals || '',
-                  arc: '',
-                  relationships: {},
-                  appearances: [],
+            personality: args.personality || '',
+            goals: args.goals || '',
+            arc: '',
+            relationships: {},
+            appearances: [],
             notes: args.role ? `Role: ${args.role}` : '',
-                };
-                await this.dbManager.saveCharacter(newCharacter);
-                this.systemActions?.notifyUpdate();
+          };
+          await this.dbManager.saveCharacter(newCharacter);
+          this.systemActions?.notifyUpdate();
           return `✓ Created character: ${newCharacter.name}`;
         }
 
@@ -662,20 +662,20 @@ export class AIClient {
 
           const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
 
-                const newScene = {
-                  id: uuidv4(),
+          const newScene = {
+            id: uuidv4(),
             number: maxSceneNum + 1,
             heading: sceneHeading,
-                  location: '',
-                  timeOfDay: '',
-                  summary: args.summary || '',
-                  characters: args.characters || [],
+            location: '',
+            timeOfDay: '',
+            summary: args.summary || '',
+            characters: args.characters || [],
             startLine: args.line_number || 0,  // Store the line number for anchoring
             endLine: args.line_number || 0,
-                  content: '',
-                };
-                await this.dbManager.saveScene(newScene);
-                this.systemActions?.notifyUpdate();
+            content: '',
+          };
+          await this.dbManager.saveScene(newScene);
+          this.systemActions?.notifyUpdate();
           return `✓ Created Scene ${newScene.number}: ${newScene.heading} (line ${newScene.startLine})`;
         }
 
@@ -809,8 +809,8 @@ export class AIClient {
         }
 
         case 'delete_scene': {
-                await this.dbManager.deleteScene(args.id);
-                this.systemActions?.notifyUpdate();
+          await this.dbManager.deleteScene(args.id);
+          this.systemActions?.notifyUpdate();
           return `✓ Deleted scene with ID: ${args.id}`;
         }
 
@@ -1004,11 +1004,11 @@ export class AIClient {
           console.log('[AI-METADATA] Setting screenplay metadata:', args);
           const results: string[] = [];
           if (args.title) {
-                if (this.systemActions) {
+            if (this.systemActions) {
               console.log('[AI-METADATA] Setting title to:', args.title);
               this.systemActions.setScreenplayTitle(args.title);
               results.push(`✓ Title set to: "${args.title}"`);
-                } else {
+            } else {
               console.log('[AI-METADATA] ERROR: No systemActions available for title!');
             }
           }
@@ -1040,20 +1040,20 @@ export class AIClient {
         }
 
         case 'export_screenplay': {
-                if (this.systemActions) {
-                  await this.systemActions.exportScreenplay(args.format);
+          if (this.systemActions) {
+            await this.systemActions.exportScreenplay(args.format);
             return `✓ Screenplay exported to ${args.format} successfully.`;
-                }
+          }
           return '✗ Export functionality not available.';
         }
 
         case 'update_content': {
-                if (this.systemActions && this.systemActions.previewUpdate) {
-                  this.systemActions.previewUpdate({
-                    original: args.original_text,
-                    modified: args.new_text,
-                    description: args.description
-                  });
+          if (this.systemActions && this.systemActions.previewUpdate) {
+            this.systemActions.previewUpdate({
+              original: args.original_text,
+              modified: args.new_text,
+              description: args.description
+            });
             return `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
           }
           return '✗ Content update functionality not available.';
@@ -1564,52 +1564,5 @@ Start analyzing the screenplay now and call the tools for EVERY scene and charac
     }
   }
 
-  /**
-   * Check if two character names are likely the same person (fuzzy matching)
-   * Reserved for future use in automated duplicate detection
-   */
-  private _areSimilarNames(name1: string, name2: string): boolean {
-    // Normalize for comparison
-    const normalize = (s: string) => s.replace(/[^A-Z]/g, '');
-    const n1 = normalize(name1);
-    const n2 = normalize(name2);
-
-    // If one is a subset of the other
-    if (n1.includes(n2) || n2.includes(n1)) {
-      return Math.abs(n1.length - n2.length) <= 3;
-    }
-
-    // Levenshtein distance for similar spellings
-    const distance = this._levenshteinDistance(n1, n2);
-    const maxLen = Math.max(n1.length, n2.length);
-
-    // Consider similar if distance is <= 20% of length
-    return distance <= Math.ceil(maxLen * 0.2);
-  }
-
-  /**
-   * Calculate Levenshtein distance between two strings
-   * Reserved for future use in automated duplicate detection
-   */
-  private _levenshteinDistance(s1: string, s2: string): number {
-    const m = s1.length;
-    const n = s2.length;
-    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        if (s1[i - 1] === s2[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1];
-        } else {
-          dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-      }
-    }
-
-    return dp[m][n];
-  }
 }
 

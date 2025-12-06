@@ -6,7 +6,7 @@ import {
   Bot, X, Send, Plus, Trash2, MessageSquare, 
   ChevronLeft, ChevronRight, Loader2, BarChart3, ChevronUp
 } from 'lucide-react';
-import type { Conversation, TokenUsage, AIMessage } from '../../shared/types';
+import type { Conversation, AIMessage } from '../../shared/types';
 
 // Helper to format token counts (e.g., 1234 -> "1.2k")
 function formatTokens(tokens: number): string {

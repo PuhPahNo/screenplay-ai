@@ -7,7 +7,7 @@ import type { Character } from '../../shared/types';
 type ViewMode = 'grid' | 'list';
 
 export default function CharacterPanel() {
-  const { characters, saveCharacter, deleteCharacter } = useAppStore();
+  const { characters, saveCharacter } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -33,16 +33,6 @@ export default function CharacterPanel() {
     }
   };
 
-  const handleDelete = async (character: Character, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm(`Delete "${character.name}"?`)) {
-      try {
-        await deleteCharacter(character.id);
-      } catch (error) {
-        alert('Failed to delete character: ' + error);
-      }
-    }
-  };
 
   const filteredCharacters = characters.filter((char) =>
     char.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

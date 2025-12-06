@@ -1,116 +1,108 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAppStore } from '../store/app-store';
-import { Film, Plus } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import SceneCard from './SceneCard';
-import type { Scene } from '../../shared/types';
+import { Film, Plus, ChevronRight } from 'lucide-react';
+import type { IndexedScene } from '../../screenplay/scene-indexer';
 
-function SortableSceneCard({ scene, characters, onDelete, onClick }: any) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: scene.id });
+interface ScenePanelProps {
+  onSceneClick?: (sceneStartLineIndex: number) => void;
+}
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+/**
+ * SceneCard - Displays a single scene in the sidebar
+ * Uses IndexedScene from SceneIndexer for accurate line indices
+ */
+function SceneCard({ 
+  scene, 
+  onClick,
+  isSelected,
+}: { 
+  scene: IndexedScene; 
+  onClick: () => void;
+  isSelected: boolean;
+}) {
+  const getTimeOfDayColor = (timeOfDay: string) => {
+    const tod = timeOfDay.toLowerCase();
+    if (tod.includes('day')) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+    if (tod.includes('night')) return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
+    if (tod.includes('dawn') || tod.includes('dusk')) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+    return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <SceneCard
-        scene={scene}
-        characters={characters}
-        onDelete={onDelete}
-        onClick={onClick}
-        isDragging={isDragging}
-        dragHandleProps={listeners}
-      />
+    <div
+      onClick={onClick}
+      className={`group relative bg-white dark:bg-dark-surface border rounded-lg p-3 transition-all duration-200 hover:shadow-md cursor-pointer ${
+        isSelected 
+          ? 'border-primary-500 dark:border-primary-400 shadow-md ring-2 ring-primary-200 dark:ring-primary-800' 
+          : 'border-gray-200 dark:border-dark-border hover:border-primary-400 dark:hover:border-primary-600'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        {/* Scene Number - Large and Prominent */}
+        <div className="flex-shrink-0">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm ${
+            isSelected 
+              ? 'bg-primary-500 dark:bg-primary-400' 
+              : 'bg-primary-600 dark:bg-primary-700'
+          }`}>
+            <span className="text-lg font-bold text-white">
+              {scene.number}
+            </span>
+          </div>
+        </div>
+
+        {/* Scene Info - Compact */}
+        <div className="flex-1 min-w-0">
+          {/* Scene Heading - Single Line */}
+          <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate mb-1">
+            {scene.heading}
+          </h4>
+
+          {/* Metadata - Inline and Minimal */}
+          <div className="flex items-center gap-2 text-xs">
+            {scene.timeOfDay && (
+              <span className={`px-2 py-0.5 rounded-full font-medium ${getTimeOfDayColor(scene.timeOfDay)}`}>
+                {scene.timeOfDay}
+              </span>
+            )}
+            
+            {scene.characters.length > 0 && (
+              <span className="text-gray-500 dark:text-gray-400">
+                {scene.characters.length} {scene.characters.length === 1 ? 'character' : 'characters'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation Arrow */}
+        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </div>
+      </div>
     </div>
   );
 }
 
-interface ScenePanelProps {
-  onSceneClick?: (sceneStartLine: number) => void;
-}
-
+/**
+ * ScenePanel - Displays all scenes parsed from screenplay content
+ * 
+ * Uses parsedScenes from SceneIndexer (single source of truth) rather than
+ * DB-backed scenes. Scene counts and navigation are deterministic and
+ * always match what's in the screenplay text.
+ */
 export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
-  const { scenes, characters, setScenes, screenplayContent, setScreenplayContent, saveScreenplay } = useAppStore();
+  const { parsedScenes, screenplayContent, setScreenplayContent, saveScreenplay } = useAppStore();
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newSceneHeading, setNewSceneHeading] = useState('');
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = scenes.findIndex((s) => s.id === active.id);
-      const newIndex = scenes.findIndex((s) => s.id === over.id);
-
-      const newScenes = arrayMove(scenes, oldIndex, newIndex).map((scene, index) => ({
-        ...scene,
-        order: index,
-        number: index + 1,
-      }));
-
-      setScenes(newScenes);
-
-      // Save scene order to database
-      newScenes.forEach((scene) => {
-        window.api.db.saveScene(scene).catch(console.error);
-      });
+  const handleSceneClick = useCallback((scene: IndexedScene) => {
+    setSelectedSceneId(scene.id);
+    if (onSceneClick) {
+      console.log('[ScenePanel] Navigating to scene:', scene.number, 'at line index:', scene.startLineIndex);
+      onSceneClick(scene.startLineIndex);
     }
-  };
-
-  const handleSceneClick = (sceneId: string) => {
-    setSelectedSceneId(sceneId);
-    const scene = scenes.find((s) => s.id === sceneId);
-    if (scene && onSceneClick) {
-      onSceneClick(scene.startLine);
-    }
-  };
-
-  const handleDelete = async (scene: Scene) => {
-    // Use window.api.dialog for confirmation since Electron doesn't support confirm()
-    try {
-      // Delete from database
-      await window.api.db.deleteScene(scene.id);
-      
-      // Update local state
-      const newScenes = scenes.filter((s) => s.id !== scene.id);
-      setScenes(newScenes);
-    } catch (error) {
-      console.error('Failed to delete scene:', error);
-    }
-  };
+  }, [onSceneClick]);
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,48 +116,24 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
     console.log('[ScenePanel] Creating scene with heading:', heading);
 
     try {
-      // Parse location and time of day from heading
-      const parseLocation = (h: string) => {
-        const match = h.match(/^(?:INT|EXT|INT\.\/EXT|I\/E)[\.\s]+(.+?)\s*-\s*/i);
-        return match ? match[1].trim() : '';
-      };
-
-      const parseTimeOfDay = (h: string) => {
-        const match = h.match(/-\s*(.+)$/);
-        return match ? match[1].trim() : '';
-      };
-
-      const newScene: Scene = {
-        id: uuidv4(),
-        number: scenes.length + 1,
-        heading: heading,
-        location: parseLocation(heading),
-        timeOfDay: parseTimeOfDay(heading),
-        summary: '',
-        characters: [],
-        startLine: -1,
-        endLine: -1,
-        content: heading,
-        order: scenes.length,
-      };
-
-      // Save to database
-      await window.api.db.saveScene(newScene);
-
-      // Add to screenplay content
-      const newContent = `${screenplayContent}\n\n${heading}\n\n`;
+      // Insert the new scene heading into the screenplay content
+      // Add it at the end with proper formatting
+      const formattedHeading = heading.toUpperCase();
+      const newContent = `${screenplayContent.trimEnd()}\n\n${formattedHeading}\n\n`;
+      
       setScreenplayContent(newContent);
       await saveScreenplay();
-
-      // Reload scenes to update UI
-      const updatedScenes = await window.api.db.getScenes();
-      setScenes(updatedScenes);
+      
+      // The store will automatically reindex scenes via setScreenplayContent
+      // So parsedScenes will update with the new scene
       
       // Reset state
       setNewSceneHeading('');
       setIsCreating(false);
+      
+      console.log('[ScenePanel] Scene added to screenplay content');
     } catch (error) {
-      alert('Failed to create scene: ' + error);
+      console.error('[ScenePanel] Failed to create scene:', error);
     }
   };
 
@@ -174,7 +142,8 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
     setNewSceneHeading('');
   };
 
-  if (scenes.length === 0) {
+  // Empty state
+  if (parsedScenes.length === 0) {
     return (
       <div className="h-full flex items-center justify-center p-6">
         <div className="text-center max-w-sm">
@@ -209,7 +178,7 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
       <div className="p-4 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-            Scenes ({scenes.length})
+            Scenes ({parsedScenes.length})
           </h3>
           <button
             onClick={() => setIsCreating(true)}
@@ -221,7 +190,7 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
           </button>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Drag to reorder scenes
+          Click to navigate to scene
         </p>
       </div>
 
@@ -256,27 +225,18 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
         </div>
       )}
 
-      {/* Scenes List with Drag and Drop */}
+      {/* Scenes List - Simple list, no drag-and-drop since scene order is determined by screenplay text */}
       <div className="flex-1 overflow-y-auto p-4">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-3">
-              {scenes.map((scene) => (
-                <SortableSceneCard
-                  key={scene.id}
-                  scene={scene}
-                  characters={characters}
-                  onDelete={handleDelete}
-                  onClick={() => handleSceneClick(scene.id)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <div className="space-y-3">
+          {parsedScenes.map((scene) => (
+            <SceneCard
+              key={scene.id}
+              scene={scene}
+              onClick={() => handleSceneClick(scene)}
+              isSelected={selectedSceneId === scene.id}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

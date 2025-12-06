@@ -391,7 +391,7 @@ Date: ${today}
       exportScreenplay: async (format) => {
         if (projectManager) {
           const content = await projectManager.loadScreenplay();
-          const basePath = projectManager['_projectPath'] || app.getPath('documents');
+          const basePath = projectManager.getProjectPath() || app.getPath('documents');
           const exportPath = path.join(basePath, `screenplay.${format}`);
           if (format === 'pdf') {
             const { PDFExporter } = require('../export/pdf-exporter');
@@ -481,7 +481,7 @@ ipcMain.handle('project:open', async (_, projectPath: string) => {
       exportScreenplay: async (format) => {
         if (projectManager) {
           const content = await projectManager.loadScreenplay();
-          const basePath = projectManager['_projectPath'] || app.getPath('documents');
+          const basePath = projectManager.getProjectPath() || app.getPath('documents');
           const exportPath = path.join(basePath, `screenplay.${format}`);
           if (format === 'pdf') {
             const { PDFExporter } = require('../export/pdf-exporter');
@@ -797,7 +797,7 @@ ipcMain.handle('settings:setGlobal', async (_, settings: any) => {
             if (projectManager) {
               const content = await projectManager.loadScreenplay();
               // Use project path if available, otherwise default to docs
-              const basePath = projectManager['_projectPath'] || app.getPath('documents');
+              const basePath = projectManager.getProjectPath() || app.getPath('documents');
               const exportPath = path.join(basePath, `screenplay.${format}`);
               if (format === 'pdf') {
                 const { PDFExporter } = require('../export/pdf-exporter');
@@ -1057,7 +1057,7 @@ ipcMain.handle('project:saveAs', async () => {
   if (result.canceled || !result.filePath) return null;
 
   // Copy current project to new location
-  const currentPath = projectManager['_projectPath'];
+  const currentPath = projectManager.getProjectPath();
   fs.copyFileSync(currentPath, result.filePath);
 
   return result.filePath;

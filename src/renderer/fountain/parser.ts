@@ -107,10 +107,10 @@ export class FountainParserAdapter {
         titleTokens.push({ type: 'centered', text: titlePage.draft, raw: `Draft: ${titlePage.draft}` });
       }
       
-      // Add spacing after title page
+      // Add spacing after title page (use 'action' type with empty text for blank lines)
       if (titleTokens.length > 0) {
-        titleTokens.push({ type: 'blank', text: '', raw: '' });
-        titleTokens.push({ type: 'blank', text: '', raw: '' });
+        titleTokens.push({ type: 'action', text: '', raw: '' });
+        titleTokens.push({ type: 'action', text: '', raw: '' });
       }
       
       result.tokens = titleTokens;

@@ -63,8 +63,7 @@ export class ContextSummarizer {
     messages: AIMessage[],
     keepRecentCount: number = 15
   ): Promise<SummarizationResult> {
-    // Separate recent messages from older ones
-    const recentMessages = messages.slice(-keepRecentCount);
+    // Separate recent messages from older ones - olderMessages get summarized, rest preserved
     const olderMessages = messages.slice(0, -keepRecentCount);
 
     if (olderMessages.length === 0) {
@@ -115,7 +114,7 @@ export class ContextSummarizer {
    * @param summary Previous conversation summary
    * @param recentMessages Recent messages that weren't summarized
    */
-  buildContextWithSummary(summary: string, recentMessages: AIMessage[]): string {
+  buildContextWithSummary(summary: string, _recentMessages: AIMessage[]): string {
     let context = '';
 
     if (summary) {

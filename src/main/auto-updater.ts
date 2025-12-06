@@ -3,9 +3,6 @@ import { autoUpdater } from 'electron-updater';
 
 // Track if user chose auto-restart
 let shouldAutoRestart = false;
-let _downloadingVersion = '';
-let _lastProgressNotification = 0;
-let _isDownloading = false;
 
 export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   // Configure auto-updater
@@ -43,7 +40,8 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   // Update available
   autoUpdater.on('update-available', (info) => {
     console.log('[AutoUpdater] Update available:', info.version);
-    downloadingVersion = info.version;
+    // Track version for logging
+    console.log('[AutoUpdater] Version to download:', info.version);
     
     const dialogOpts = {
       type: 'info' as const,
@@ -58,7 +56,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
     dialog.showMessageBox(dialogOpts).then(async (result) => {
       if (result.response === 0 || result.response === 1) {
         shouldAutoRestart = result.response === 0;
-        isDownloading = true;
         
         // Update window title to show downloading
         if (mainWindow) {
@@ -80,7 +77,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
           await autoUpdater.downloadUpdate();
         } catch (err: any) {
           console.error('[AutoUpdater] Download failed:', err);
-          isDownloading = false;
           
           if (mainWindow) {
             mainWindow.setTitle('Screenplay AI');
@@ -133,7 +129,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   // Update downloaded
   autoUpdater.on('update-downloaded', (info) => {
     console.log('[AutoUpdater] ✓ Download complete:', info.version);
-    isDownloading = false;
     
     // Reset window title
     if (mainWindow) {
@@ -194,7 +189,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   autoUpdater.on('error', (err) => {
     console.error('[AutoUpdater] ✗ Error:', err);
     shouldAutoRestart = false;
-    isDownloading = false;
     
     // Reset window title
     if (mainWindow) {
