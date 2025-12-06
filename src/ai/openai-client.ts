@@ -235,6 +235,21 @@ export class AIClient {
         {
           type: 'function',
           function: {
+            name: 'link_character_to_scene',
+            description: 'Link a character to a scene they appear in. Updates both the character\'s appearances and the scene\'s character list.',
+            parameters: {
+              type: 'object',
+              properties: {
+                character_name: { type: 'string', description: 'The character name (case-insensitive)' },
+                scene_number: { type: 'number', description: 'The scene number where this character appears' }
+              },
+              required: ['character_name', 'scene_number']
+            }
+          }
+        },
+        {
+          type: 'function',
+          function: {
             name: 'get_character_scenes',
             description: 'Get all scenes where a specific character appears, with full scene content.',
             parameters: {
@@ -577,6 +592,52 @@ export class AIClient {
                 }
                 break;
 
+              case 'link_character_to_scene':
+                const linkCharName = args.character_name.toUpperCase().trim();
+                const linkSceneNum = args.scene_number;
+                
+                // Find the character
+                const allCharsForLink = await this.dbManager.getCharacters();
+                const charToLink = allCharsForLink.find(c => 
+                  c.name.toUpperCase().trim() === linkCharName
+                );
+                
+                // Find the scene
+                const allScenesForLink = await this.dbManager.getScenes();
+                const sceneToLink = allScenesForLink.find(s => s.number === linkSceneNum);
+                
+                if (!charToLink) {
+                  result = `Character "${linkCharName}" not found in database`;
+                  break;
+                }
+                
+                if (!sceneToLink) {
+                  result = `Scene ${linkSceneNum} not found in database`;
+                  break;
+                }
+                
+                // Update character's appearances
+                const charAppearanceSet = new Set(charToLink.appearances || []);
+                charAppearanceSet.add(sceneToLink.id);
+                const updatedCharForLink = {
+                  ...charToLink,
+                  appearances: Array.from(charAppearanceSet),
+                };
+                await this.dbManager.saveCharacter(updatedCharForLink);
+                
+                // Update scene's character list
+                const sceneCharSet = new Set(sceneToLink.characters || []);
+                sceneCharSet.add(charToLink.name);
+                const updatedSceneForLink = {
+                  ...sceneToLink,
+                  characters: Array.from(sceneCharSet),
+                };
+                await this.dbManager.saveScene(updatedSceneForLink);
+                
+                result = `✓ Linked ${charToLink.name} to Scene ${linkSceneNum} (${sceneToLink.heading})`;
+                this.systemActions?.notifyUpdate();
+                break;
+
               case 'get_character_scenes':
                 const charScenes = await this.dbManager.getScenes();
                 const charName = args.character_name.toUpperCase();
@@ -629,11 +690,12 @@ export class AIClient {
 
         // Continue with another API call - it might need more tool calls
         let continueLoop = true;
-        let maxIterations = 5; // Safety limit to prevent infinite loops
+        let maxIterations = 15; // Increased limit for analysis with many scenes/characters
         let iterations = 0;
         
         while (continueLoop && iterations < maxIterations) {
           iterations++;
+          console.log(`[AI] Tool call iteration ${iterations}/${maxIterations}`);
           
           const nextResponse = await this.openai.chat.completions.create({
             model: 'gpt-5-mini',
@@ -658,25 +720,9 @@ export class AIClient {
           if (nextMessage?.tool_calls && nextMessage.tool_calls.length > 0) {
             messages.push(nextMessage);
             
-            // Execute these tool calls too (simplified - reusing same switch logic)
+            // Execute ALL tool calls using the same handlers
             for (const toolCall of nextMessage.tool_calls) {
-              const args = JSON.parse(toolCall.function.arguments);
-              let result = 'Action completed.';
-              
-              // Re-execute the same switch logic for additional tool calls
-              // This is a simplified version - for complex cases, extract the switch to a method
-              try {
-                // Handle the most common follow-up tools
-                if (toolCall.function.name === 'read_scene' || 
-                    toolCall.function.name === 'read_character' ||
-                    toolCall.function.name === 'search_screenplay') {
-                  // These are query tools - execute them
-                  // (The full switch is above, this handles follow-up queries)
-                  result = `Tool ${toolCall.function.name} executed.`;
-                }
-              } catch (error) {
-                result = `Error: ${error}`;
-              }
+              let result = await this.executeToolCall(toolCall.function.name, JSON.parse(toolCall.function.arguments));
               
               messages.push({
                 role: 'tool',
@@ -720,6 +766,216 @@ export class AIClient {
     } catch (error) {
       console.error('OpenAI API error:', error);
       throw new Error('Failed to get AI response: ' + error);
+    }
+  }
+
+  // Extracted tool execution logic for reuse in continuation loops
+  private async executeToolCall(toolName: string, args: any): Promise<string> {
+    try {
+      switch (toolName) {
+        case 'create_character': {
+          const charName = args.name.toUpperCase().trim();
+          
+          // Check if this looks like a scene heading
+          const sceneHeadingPattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
+          if (sceneHeadingPattern.test(charName)) {
+            return `Skipped: "${charName}" looks like a scene heading, not a character`;
+          }
+          
+          // Check for duplicates
+          const existingChars = await this.dbManager.getCharacters();
+          const duplicateChar = existingChars.find(c => 
+            c.name.toUpperCase().trim() === charName
+          );
+          
+          if (duplicateChar) {
+            return `Character "${charName}" already exists - skipping duplicate`;
+          }
+          
+          const newCharacter = {
+            id: uuidv4(),
+            name: charName,
+            description: args.description || '',
+            age: args.age || '',
+            occupation: args.occupation || '',
+            personality: args.personality || '',
+            goals: args.goals || '',
+            arc: '',
+            relationships: {},
+            appearances: [],
+            notes: args.role ? `Role: ${args.role}` : '',
+          };
+          await this.dbManager.saveCharacter(newCharacter);
+          this.systemActions?.notifyUpdate();
+          return `✓ Created character: ${newCharacter.name}`;
+        }
+
+        case 'add_scene': {
+          const sceneHeading = args.heading.toUpperCase().trim();
+          
+          // Check for duplicates
+          const existingScenes = await this.dbManager.getScenes();
+          const duplicateScene = existingScenes.find(s => 
+            s.heading.toUpperCase().trim() === sceneHeading
+          );
+          
+          if (duplicateScene) {
+            return `Scene "${sceneHeading}" already exists (Scene ${duplicateScene.number}) - skipping duplicate`;
+          }
+          
+          const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
+          
+          const newScene = {
+            id: uuidv4(),
+            number: maxSceneNum + 1,
+            heading: sceneHeading,
+            location: '',
+            timeOfDay: '',
+            summary: args.summary || '',
+            characters: args.characters || [],
+            startLine: 0,
+            endLine: 0,
+            content: '',
+          };
+          await this.dbManager.saveScene(newScene);
+          this.systemActions?.notifyUpdate();
+          return `✓ Created Scene ${newScene.number}: ${newScene.heading}`;
+        }
+
+        case 'link_character_to_scene': {
+          const linkCharName = args.character_name.toUpperCase().trim();
+          const linkSceneNum = args.scene_number;
+          
+          const allCharsForLink = await this.dbManager.getCharacters();
+          const charToLink = allCharsForLink.find(c => 
+            c.name.toUpperCase().trim() === linkCharName
+          );
+          
+          const allScenesForLink = await this.dbManager.getScenes();
+          const sceneToLink = allScenesForLink.find(s => s.number === linkSceneNum);
+          
+          if (!charToLink) {
+            return `Character "${linkCharName}" not found in database`;
+          }
+          
+          if (!sceneToLink) {
+            return `Scene ${linkSceneNum} not found in database`;
+          }
+          
+          // Update character's appearances
+          const charAppearanceSet = new Set(charToLink.appearances || []);
+          charAppearanceSet.add(sceneToLink.id);
+          const updatedCharForLink = {
+            ...charToLink,
+            appearances: Array.from(charAppearanceSet),
+          };
+          await this.dbManager.saveCharacter(updatedCharForLink);
+          
+          // Update scene's character list
+          const sceneCharSet = new Set(sceneToLink.characters || []);
+          sceneCharSet.add(charToLink.name);
+          const updatedSceneForLink = {
+            ...sceneToLink,
+            characters: Array.from(sceneCharSet),
+          };
+          await this.dbManager.saveScene(updatedSceneForLink);
+          
+          this.systemActions?.notifyUpdate();
+          return `✓ Linked ${charToLink.name} to Scene ${linkSceneNum}`;
+        }
+
+        case 'delete_character': {
+          await this.dbManager.deleteCharacter(args.id);
+          this.systemActions?.notifyUpdate();
+          return `✓ Deleted character with ID: ${args.id}`;
+        }
+
+        case 'delete_character_by_name': {
+          const charsToSearch = await this.dbManager.getCharacters();
+          const charToDelete = charsToSearch.find(c => 
+            c.name.toLowerCase() === args.character_name.toLowerCase()
+          );
+          if (charToDelete) {
+            await this.dbManager.deleteCharacter(charToDelete.id);
+            this.systemActions?.notifyUpdate();
+            return `✓ Deleted character: ${charToDelete.name}`;
+          }
+          return `✗ Character not found: "${args.character_name}"`;
+        }
+
+        case 'delete_scene': {
+          await this.dbManager.deleteScene(args.id);
+          this.systemActions?.notifyUpdate();
+          return `✓ Deleted scene with ID: ${args.id}`;
+        }
+
+        case 'edit_character': {
+          const char = await this.dbManager.getCharacter(args.id);
+          if (char) {
+            const updatedChar = { ...char, ...args };
+            await this.dbManager.saveCharacter(updatedChar);
+            this.systemActions?.notifyUpdate();
+            return `✓ Updated character: ${char.name}`;
+          }
+          return `Character not found with ID: ${args.id}`;
+        }
+
+        case 'read_scene': {
+          const scenes = await this.dbManager.getScenes();
+          let targetScene = null;
+          
+          if (args.scene_id) {
+            targetScene = scenes.find(s => s.id === args.scene_id);
+          } else if (args.scene_number) {
+            targetScene = scenes.find(s => s.number === args.scene_number);
+          }
+          
+          if (targetScene) {
+            return `=== SCENE ${targetScene.number}: ${targetScene.heading} ===\nCharacters: ${targetScene.characters.join(', ') || 'None listed'}`;
+          }
+          return `Scene not found`;
+        }
+
+        case 'read_character': {
+          const allCharacters = await this.dbManager.getCharacters();
+          let targetChar = null;
+          
+          if (args.character_id) {
+            targetChar = await this.dbManager.getCharacter(args.character_id);
+          } else if (args.character_name) {
+            targetChar = allCharacters.find(c => 
+              c.name.toLowerCase() === args.character_name.toLowerCase()
+            );
+          }
+          
+          if (targetChar) {
+            return `=== CHARACTER: ${targetChar.name} ===\nAppears in ${targetChar.appearances.length} scene(s)`;
+          }
+          return `Character not found`;
+        }
+
+        case 'search_screenplay': {
+          const allScenes = await this.dbManager.getScenes();
+          const query = args.query.toLowerCase();
+          const matches: string[] = [];
+          
+          for (const scene of allScenes) {
+            if (scene.content && scene.content.toLowerCase().includes(query)) {
+              matches.push(`Scene ${scene.number} (${scene.heading})`);
+            }
+          }
+          
+          return matches.length > 0 
+            ? `Found "${args.query}" in ${matches.length} scene(s): ${matches.join(', ')}`
+            : `No matches found for "${args.query}"`;
+        }
+
+        default:
+          return `Tool ${toolName} executed.`;
+      }
+    } catch (error) {
+      console.error(`[AI] Error executing tool ${toolName}:`, error);
+      return `Error: ${error}`;
     }
   }
 
@@ -1025,14 +1281,31 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
     };
 
     // Build a focused analysis prompt
-    const analysisPrompt = `IMPORTANT: Analyze this screenplay and use tools to CREATE all characters and scenes you find.
+    const analysisPrompt = `You are an intelligent screenplay assistant. Analyze this screenplay and perform these actions IN ORDER:
 
-For EACH character who speaks dialogue, call create_character with their name.
-For EACH scene heading (INT./EXT. lines), call create_scene with the heading.
+**STEP 1 - Create Scenes:**
+For EACH scene heading (lines starting with INT., EXT., INT./EXT., I/E., or ! prefix), call add_scene with the heading.
 
-Do NOT just list them - you MUST call the tools to create them in the database.
+**STEP 2 - Create Characters:**
+For EACH character who SPEAKS dialogue (names that appear above dialogue in UPPERCASE), call create_character with their name.
+- ONLY create speaking characters (names above dialogue)
+- Do NOT create scene headings as characters
+- Do NOT create action descriptions as characters
 
-Start analyzing now and create all characters and scenes you find:`;
+**STEP 3 - Link Characters to Scenes:**
+After creating scenes and characters, for EACH character, call link_character_to_scene to link them to the scenes they appear in.
+- This updates the character's scene count
+- This updates each scene's character list
+
+**EXAMPLE:**
+If Scene 1 has JOHN speaking, call:
+1. add_scene with "INT. OFFICE - DAY"
+2. create_character with "JOHN"
+3. link_character_to_scene with character_name="JOHN" and scene_number=1
+
+**IMPORTANT:** Use the tools to CREATE and LINK - do not just describe what you found.
+
+Start analyzing now:`;
 
     // Call the existing chat function which has all the tool execution logic
     console.log('[AI] Calling chat function with analysis prompt...');
