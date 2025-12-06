@@ -1,14 +1,38 @@
 import { useState, useEffect } from 'react';
-import { X, AlertTriangle, Check, Merge, Trash2, Loader2, FileSearch } from 'lucide-react';
-import { FountainParserAdapter } from '../fountain/parser';
+import { X, AlertTriangle, Check, Merge, Trash2, Loader2, Sparkles, Plus, RefreshCw } from 'lucide-react';
 import type { Character, Scene } from '../../shared/types';
 
 interface CleanupSuggestion {
-  type: 'merge' | 'delete' | 'rename';
+  type: 'merge' | 'delete' | 'rename' | 'add';
   category: 'character' | 'scene';
   items: string[];
   targetName?: string;
   reason: string;
+}
+
+interface LLMAnalysisResult {
+  title?: string;
+  author?: string;
+  scenes: Array<{
+    number: number;
+    heading: string;
+    location: string;
+    timeOfDay: string;
+    lineNumber: number;
+  }>;
+  characters: Array<{
+    name: string;
+    normalizedName: string;
+    aliases: string[];
+    dialogueCount: number;
+    firstAppearance: number;
+    description?: string;
+  }>;
+  duplicates: Array<{
+    names: string[];
+    suggestedName: string;
+    reason: string;
+  }>;
 }
 
 interface CleanupReviewModalProps {
@@ -16,8 +40,9 @@ interface CleanupReviewModalProps {
   onClose: () => void;
   characters: Character[];
   scenes: Scene[];
-  screenplayContent: string; // Add screenplay content for cross-referencing
+  screenplayContent: string;
   onApplyCleanup: (suggestions: CleanupSuggestion[]) => Promise<void>;
+  onSyncFromLLM?: (analysis: LLMAnalysisResult) => Promise<void>;
 }
 
 export function CleanupReviewModal({
@@ -27,239 +52,137 @@ export function CleanupReviewModal({
   scenes,
   screenplayContent,
   onApplyCleanup,
+  onSyncFromLLM,
 }: CleanupReviewModalProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [suggestions, setSuggestions] = useState<CleanupSuggestion[]>([]);
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<string>('');
+  const [llmAnalysis, setLlmAnalysis] = useState<LLMAnalysisResult | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      analyzeForCleanup();
+      analyzeWithLLM();
     }
-  }, [isOpen, characters, scenes]);
+  }, [isOpen]);
 
-  const analyzeForCleanup = async () => {
+  // LLM-powered analysis for accurate character/scene detection
+  const analyzeWithLLM = async () => {
     setIsAnalyzing(true);
     setError(null);
     setSuggestions([]);
+    setLlmAnalysis(null);
+    setAnalysisProgress('Initializing AI analysis...');
 
     try {
-      console.log('[Cleanup] Starting analysis...');
+      console.log('[Cleanup] Starting LLM-powered analysis...');
       console.log('[Cleanup] Characters in DB:', characters.length);
       console.log('[Cleanup] Scenes in DB:', scenes.length);
       console.log('[Cleanup] Screenplay length:', screenplayContent?.length || 0);
+
+      if (!screenplayContent || screenplayContent.trim().length === 0) {
+        setError('No screenplay content to analyze');
+        setIsAnalyzing(false);
+        return;
+      }
+
+      setAnalysisProgress('Sending screenplay to AI for intelligent analysis...');
       
-      // Parse the actual screenplay to find what's really there
-      const parsed = screenplayContent 
-        ? FountainParserAdapter.parse(screenplayContent)
-        : { characters: new Set<string>(), scenes: [] };
+      // Call the LLM-powered analysis
+      const analysis: LLMAnalysisResult = await window.api.ai.analyzeScreenplay(screenplayContent);
+      setLlmAnalysis(analysis);
       
-      const screenplayCharacters = parsed.characters;
-      const screenplaySceneHeadings = new Set(
-        parsed.scenes.map(s => s.heading.toUpperCase().trim())
-      );
+      console.log('[Cleanup] LLM found:', analysis.characters.length, 'characters,', analysis.scenes.length, 'scenes');
+      console.log('[Cleanup] LLM duplicates:', analysis.duplicates);
       
-      console.log('[Cleanup] Characters in screenplay:', Array.from(screenplayCharacters));
-      console.log('[Cleanup] Scenes in screenplay:', parsed.scenes.length);
+      setAnalysisProgress('Comparing AI results with database...');
       
-      // Analyze characters for duplicates/similar names
-      const charSuggestions = analyzeCharacters(characters);
+      // Now compare LLM results with what's in the database
+      const allSuggestions: CleanupSuggestion[] = [];
       
-      // Cross-reference: Find characters in DB that don't appear in screenplay
-      const orphanedCharSuggestions = findOrphanedCharacters(characters, screenplayCharacters);
+      // 1. Find characters in DB that LLM didn't find (orphaned)
+      const llmCharNames = new Set(analysis.characters.map(c => c.normalizedName.toUpperCase()));
+      const llmAliases = new Set<string>();
+      analysis.characters.forEach(c => c.aliases.forEach(a => llmAliases.add(a.toUpperCase())));
       
-      // Analyze scenes for issues
-      const sceneSuggestions = analyzeScenes(scenes);
+      for (const dbChar of characters) {
+        const nameUpper = dbChar.name.toUpperCase().trim();
+        if (!llmCharNames.has(nameUpper) && !llmAliases.has(nameUpper)) {
+          allSuggestions.push({
+            type: 'delete',
+            category: 'character',
+            items: [dbChar.name],
+            reason: 'AI did not detect this as a valid character in the screenplay',
+          });
+        }
+      }
       
-      // Cross-reference: Find scenes in DB that don't match screenplay
-      const orphanedSceneSuggestions = findOrphanedScenes(scenes, screenplaySceneHeadings);
+      // 2. Add LLM-detected duplicates
+      for (const dup of analysis.duplicates) {
+        allSuggestions.push({
+          type: 'merge',
+          category: 'character',
+          items: dup.names,
+          targetName: dup.suggestedName,
+          reason: dup.reason,
+        });
+      }
       
-      const allSuggestions = [
-        ...orphanedCharSuggestions,  // Orphaned characters first (highest priority)
-        ...charSuggestions,
-        ...orphanedSceneSuggestions,
-        ...sceneSuggestions,
-      ];
+      // 3. Find missing characters (LLM found but not in DB)
+      const dbCharNames = new Set(characters.map(c => c.name.toUpperCase().trim()));
+      for (const llmChar of analysis.characters) {
+        if (!dbCharNames.has(llmChar.normalizedName.toUpperCase())) {
+          allSuggestions.push({
+            type: 'add',
+            category: 'character',
+            items: [llmChar.name],
+            reason: `AI detected character with ${llmChar.dialogueCount} dialogue line(s)`,
+          });
+        }
+      }
       
+      // 4. Find scenes in DB that LLM didn't find
+      const llmSceneHeadings = new Set(analysis.scenes.map(s => s.heading.toUpperCase().trim()));
+      for (const dbScene of scenes) {
+        const headingUpper = dbScene.heading.toUpperCase().trim();
+        if (!llmSceneHeadings.has(headingUpper)) {
+          allSuggestions.push({
+            type: 'delete',
+            category: 'scene',
+            items: [`Scene ${dbScene.number}: ${dbScene.heading}`],
+            reason: 'AI did not find this scene heading in the screenplay',
+          });
+        }
+      }
+      
+      // 5. Find missing scenes (LLM found but not in DB)
+      const dbSceneHeadings = new Set(scenes.map(s => s.heading.toUpperCase().trim()));
+      for (const llmScene of analysis.scenes) {
+        if (!dbSceneHeadings.has(llmScene.heading.toUpperCase().trim())) {
+          allSuggestions.push({
+            type: 'add',
+            category: 'scene',
+            items: [`${llmScene.heading}`],
+            reason: `AI detected scene: ${llmScene.location} - ${llmScene.timeOfDay}`,
+          });
+        }
+      }
+
       console.log('[Cleanup] Total suggestions:', allSuggestions.length);
       setSuggestions(allSuggestions);
-      
-      // Select all by default
       setSelectedSuggestions(new Set(allSuggestions.map((_, i) => i)));
+      setAnalysisProgress('');
+      
     } catch (err) {
-      console.error('[Cleanup] Analysis error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to analyze');
+      console.error('[Cleanup] LLM Analysis error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to analyze with AI. Please check your API key and try again.');
+      setAnalysisProgress('');
     } finally {
       setIsAnalyzing(false);
     }
-  };
-
-  // Find characters in DB that don't appear in the actual screenplay
-  const findOrphanedCharacters = (
-    dbChars: Character[], 
-    screenplayChars: Set<string>
-  ): CleanupSuggestion[] => {
-    const suggestions: CleanupSuggestion[] = [];
-    const screenplayCharsUpper = new Set(
-      Array.from(screenplayChars).map(c => c.toUpperCase().trim())
-    );
-    
-    for (const char of dbChars) {
-      const nameUpper = char.name.toUpperCase().trim();
-      
-      // Check if this character appears in the screenplay
-      if (!screenplayCharsUpper.has(nameUpper)) {
-        suggestions.push({
-          type: 'delete',
-          category: 'character',
-          items: [char.name],
-          reason: 'Character not found in screenplay text - may be incorrectly detected',
-        });
-      }
-    }
-    
-    return suggestions;
-  };
-
-  // Find scenes in DB that don't match screenplay headings
-  const findOrphanedScenes = (
-    dbScenes: Scene[], 
-    screenplayHeadings: Set<string>
-  ): CleanupSuggestion[] => {
-    const suggestions: CleanupSuggestion[] = [];
-    
-    for (const scene of dbScenes) {
-      const headingUpper = scene.heading.toUpperCase().trim();
-      
-      // Check if this scene heading exists in the screenplay
-      if (!screenplayHeadings.has(headingUpper)) {
-        suggestions.push({
-          type: 'delete',
-          category: 'scene',
-          items: [`Scene ${scene.number}: ${scene.heading}`],
-          reason: 'Scene heading not found in screenplay - may be outdated',
-        });
-      }
-    }
-    
-    return suggestions;
-  };
-
-  // Analyze characters for potential duplicates or issues
-  const analyzeCharacters = (chars: Character[]): CleanupSuggestion[] => {
-    const suggestions: CleanupSuggestion[] = [];
-    const processed = new Set<string>();
-
-    // Group similar names
-    const nameGroups = new Map<string, Character[]>();
-
-    for (const char of chars) {
-      // Normalize name for comparison
-      const normalized = char.name
-        .toUpperCase()
-        .replace(/['']/g, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      // Check for variations (O'KEEFE vs O'KEEFFE, etc.)
-      const baseKey = normalized
-        .replace(/[^A-Z\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!nameGroups.has(baseKey)) {
-        nameGroups.set(baseKey, []);
-      }
-      nameGroups.get(baseKey)!.push(char);
-    }
-
-    // Find groups with multiple characters (potential duplicates)
-    for (const [, group] of nameGroups) {
-      if (group.length > 1) {
-        const names = group.map(c => c.name);
-        suggestions.push({
-          type: 'merge',
-          category: 'character',
-          items: names,
-          targetName: names[0], // Default to first name
-          reason: `Found ${group.length} similar character names that may be duplicates`,
-        });
-        names.forEach(n => processed.add(n));
-      }
-    }
-
-    // Check for very short or likely-invalid character names
-    for (const char of chars) {
-      if (processed.has(char.name)) continue;
-
-      const trimmed = char.name.trim();
-      
-      // Single letter or very short names
-      if (trimmed.length <= 2) {
-        suggestions.push({
-          type: 'delete',
-          category: 'character',
-          items: [char.name],
-          reason: 'Character name is too short and may be incorrectly detected',
-        });
-        continue;
-      }
-
-      // Names that look like action lines (contain verbs or common action words)
-      const actionPatterns = /\b(WALKS|RUNS|LOOKS|STANDS|SITS|ENTERS|EXITS|TURNS|MOVES)\b/i;
-      if (actionPatterns.test(trimmed)) {
-        suggestions.push({
-          type: 'delete',
-          category: 'character',
-          items: [char.name],
-          reason: 'Name appears to be an action line, not a character',
-        });
-      }
-    }
-
-    return suggestions;
-  };
-
-  // Analyze scenes for potential issues
-  const analyzeScenes = (sceneList: Scene[]): CleanupSuggestion[] => {
-    const suggestions: CleanupSuggestion[] = [];
-
-    // Check for duplicate scene headings
-    const headingCounts = new Map<string, Scene[]>();
-    for (const scene of sceneList) {
-      const heading = scene.heading.toUpperCase().trim();
-      if (!headingCounts.has(heading)) {
-        headingCounts.set(heading, []);
-      }
-      headingCounts.get(heading)!.push(scene);
-    }
-
-    for (const [, sceneGroup] of headingCounts) {
-      if (sceneGroup.length > 1) {
-        suggestions.push({
-          type: 'merge',
-          category: 'scene',
-          items: sceneGroup.map(s => `Scene ${s.number}: ${s.heading}`),
-          reason: `Found ${sceneGroup.length} scenes with the same heading`,
-        });
-      }
-    }
-
-    // Check for empty or very short scenes
-    for (const scene of sceneList) {
-      if (!scene.content || scene.content.trim().length < 10) {
-        suggestions.push({
-          type: 'delete',
-          category: 'scene',
-          items: [`Scene ${scene.number}: ${scene.heading}`],
-          reason: 'Scene has no content or is very short',
-        });
-      }
-    }
-
-    return suggestions;
   };
 
   const toggleSuggestion = (index: number) => {
@@ -287,6 +210,46 @@ export function CleanupReviewModal({
     }
   };
 
+  const handleSyncAll = async () => {
+    if (!llmAnalysis || !onSyncFromLLM) return;
+    
+    setIsSyncing(true);
+    try {
+      await onSyncFromLLM(llmAnalysis);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync from AI');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const getSuggestionIcon = (suggestion: CleanupSuggestion) => {
+    switch (suggestion.type) {
+      case 'add':
+        return <Plus className="w-4 h-4 text-green-400" />;
+      case 'merge':
+        return <Merge className="w-4 h-4 text-purple-400" />;
+      case 'delete':
+        return <Trash2 className="w-4 h-4 text-red-400" />;
+      default:
+        return <AlertTriangle className="w-4 h-4 text-amber-400" />;
+    }
+  };
+
+  const getSuggestionLabel = (suggestion: CleanupSuggestion) => {
+    switch (suggestion.type) {
+      case 'add':
+        return 'Add';
+      case 'merge':
+        return 'Merge';
+      case 'delete':
+        return 'Remove';
+      default:
+        return suggestion.type;
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -302,8 +265,8 @@ export function CleanupReviewModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
-            Clean Up Characters & Scenes
+            <Sparkles className="w-5 h-5 text-blue-400" />
+            AI-Powered Screenplay Analysis
           </h2>
           <button
             onClick={onClose}
@@ -317,23 +280,49 @@ export function CleanupReviewModal({
         <div className="flex-1 overflow-y-auto p-4">
           {isAnalyzing ? (
             <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
-              <Loader2 className="w-8 h-8 animate-spin mb-4" />
-              <p>Analyzing your screenplay for potential issues...</p>
+              <Sparkles className="w-10 h-10 animate-pulse mb-4 text-blue-400" />
+              <p className="text-white font-medium mb-2">Analyzing with AI...</p>
+              <p className="text-sm">{analysisProgress}</p>
+              <p className="text-xs mt-4 text-zinc-500">This may take a moment for longer screenplays</p>
             </div>
           ) : error ? (
-            <div className="text-red-400 p-4 bg-red-900/20 rounded">
-              {error}
+            <div className="text-center py-8">
+              <div className="text-red-400 p-4 bg-red-900/20 rounded mb-4">
+                {error}
+              </div>
+              <button
+                onClick={analyzeWithLLM}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm flex items-center gap-2 mx-auto"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry Analysis
+              </button>
             </div>
           ) : suggestions.length === 0 ? (
             <div className="text-center py-12 text-zinc-400">
               <Check className="w-12 h-12 mx-auto mb-4 text-green-400" />
-              <p className="text-lg font-medium text-white">All Clear!</p>
-              <p>No duplicate characters or scene issues were found.</p>
+              <p className="text-lg font-medium text-white">Perfect Match!</p>
+              <p>Your database matches the AI analysis exactly.</p>
+              {llmAnalysis && (
+                <p className="text-sm mt-2 text-zinc-500">
+                  {llmAnalysis.characters.length} characters, {llmAnalysis.scenes.length} scenes detected
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
+              {/* Summary */}
+              {llmAnalysis && (
+                <div className="p-3 bg-blue-900/20 border border-blue-800 rounded-lg mb-4">
+                  <p className="text-sm text-blue-300 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    AI detected <strong>{llmAnalysis.characters.length}</strong> characters and <strong>{llmAnalysis.scenes.length}</strong> scenes
+                  </p>
+                </div>
+              )}
+              
               <p className="text-sm text-zinc-400 mb-4">
-                Found {suggestions.length} potential issue(s). Select the ones you want to fix:
+                Found {suggestions.length} difference(s) between AI analysis and your database:
               </p>
 
               {suggestions.map((suggestion, index) => (
@@ -341,7 +330,11 @@ export function CleanupReviewModal({
                   key={index}
                   className={`p-4 rounded-lg border transition-colors cursor-pointer ${
                     selectedSuggestions.has(index)
-                      ? 'border-blue-500 bg-blue-900/20'
+                      ? suggestion.type === 'add' 
+                        ? 'border-green-500 bg-green-900/20'
+                        : suggestion.type === 'merge'
+                        ? 'border-purple-500 bg-purple-900/20'
+                        : 'border-red-500 bg-red-900/20'
                       : 'border-zinc-700 bg-zinc-800/50 hover:border-zinc-600'
                   }`}
                   onClick={() => toggleSuggestion(index)}
@@ -349,7 +342,11 @@ export function CleanupReviewModal({
                   <div className="flex items-start gap-3">
                     <div className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center ${
                       selectedSuggestions.has(index)
-                        ? 'bg-blue-500 border-blue-500'
+                        ? suggestion.type === 'add'
+                          ? 'bg-green-500 border-green-500'
+                          : suggestion.type === 'merge'
+                          ? 'bg-purple-500 border-purple-500'
+                          : 'bg-red-500 border-red-500'
                         : 'border-zinc-600'
                     }`}>
                       {selectedSuggestions.has(index) && (
@@ -359,16 +356,9 @@ export function CleanupReviewModal({
 
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        {suggestion.type === 'merge' ? (
-                          <Merge className="w-4 h-4 text-purple-400" />
-                        ) : suggestion.reason.includes('not found in screenplay') ? (
-                          <FileSearch className="w-4 h-4 text-amber-400" />
-                        ) : (
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        )}
+                        {getSuggestionIcon(suggestion)}
                         <span className="text-sm font-medium text-white">
-                          {suggestion.type === 'merge' ? 'Merge' : 
-                           suggestion.reason.includes('not found in screenplay') ? 'Remove (Orphaned)' : 'Delete'}{' '}
+                          {getSuggestionLabel(suggestion)}{' '}
                           <span className="text-zinc-400">
                             ({suggestion.category})
                           </span>
@@ -379,9 +369,13 @@ export function CleanupReviewModal({
                         {suggestion.items.map((item, i) => (
                           <span key={i}>
                             {i > 0 && (
-                              <span className="text-zinc-500 mx-1">→</span>
+                              <span className="text-zinc-500 mx-1">+</span>
                             )}
-                            <code className="bg-zinc-700 px-1 rounded">
+                            <code className={`px-1 rounded ${
+                              suggestion.type === 'add' 
+                                ? 'bg-green-900/50 text-green-300'
+                                : 'bg-zinc-700'
+                            }`}>
                               {item}
                             </code>
                           </span>
@@ -389,7 +383,7 @@ export function CleanupReviewModal({
                         {suggestion.targetName && suggestion.type === 'merge' && (
                           <>
                             <span className="text-zinc-500 mx-1">→</span>
-                            <code className="bg-green-900/50 text-green-300 px-1 rounded">
+                            <code className="bg-purple-900/50 text-purple-300 px-1 rounded">
                               {suggestion.targetName}
                             </code>
                           </>
@@ -415,6 +409,16 @@ export function CleanupReviewModal({
           </button>
           
           <div className="flex gap-2">
+            {!isAnalyzing && !error && (
+              <button
+                onClick={analyzeWithLLM}
+                className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Re-analyze
+              </button>
+            )}
+            
             {suggestions.length > 0 && (
               <>
                 <button
@@ -431,6 +435,27 @@ export function CleanupReviewModal({
                 </button>
               </>
             )}
+            
+            {llmAnalysis && onSyncFromLLM && (
+              <button
+                onClick={handleSyncAll}
+                disabled={isSyncing}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Sync All from AI
+                  </>
+                )}
+              </button>
+            )}
+            
             <button
               onClick={handleApply}
               disabled={isApplying || selectedSuggestions.size === 0}
@@ -455,5 +480,4 @@ export function CleanupReviewModal({
   );
 }
 
-export type { CleanupSuggestion };
-
+export type { CleanupSuggestion, LLMAnalysisResult };

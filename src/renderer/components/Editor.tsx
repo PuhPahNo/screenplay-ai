@@ -173,6 +173,7 @@ export default function Editor() {
     
     let deletedCount = 0;
     let mergedCount = 0;
+    let addedCount = 0;
     
     for (const suggestion of suggestions) {
       console.log('[Cleanup] Processing:', suggestion.type, suggestion.category, suggestion.items);
@@ -227,6 +228,28 @@ export default function Editor() {
               }
             }
           }
+        } else if (suggestion.type === 'add') {
+          // Add new character detected by AI
+          for (const charName of suggestion.items) {
+            console.log('[Cleanup] Adding new character:', charName);
+            const newCharacter = {
+              id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: charName.toUpperCase(),
+              description: 'AI-detected character',
+              appearances: [],
+              dialogueCount: 0,
+              firstAppearance: 0,
+              arc: '',
+              age: '',
+              occupation: '',
+              personality: '',
+              backstory: '',
+              goals: '',
+              role: '',
+            };
+            await window.api.db.saveCharacter(newCharacter);
+            addedCount++;
+          }
         }
       } else if (suggestion.category === 'scene') {
         if (suggestion.type === 'delete') {
@@ -245,13 +268,97 @@ export default function Editor() {
               }
             }
           }
+        } else if (suggestion.type === 'add') {
+          // Add new scene detected by AI
+          for (const sceneHeading of suggestion.items) {
+            console.log('[Cleanup] Adding new scene:', sceneHeading);
+            const newScene = {
+              id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              number: currentScenes.length + 1 + addedCount,
+              heading: sceneHeading.toUpperCase(),
+              content: '',
+              startLine: 0,
+              endLine: 0,
+              characters: [],
+              summary: '',
+              mood: '',
+              notes: '',
+            };
+            await window.api.db.saveScene(newScene);
+            addedCount++;
+          }
         }
       }
     }
 
-    console.log('[Cleanup] Completed. Deleted:', deletedCount, 'Merged:', mergedCount);
+    console.log('[Cleanup] Completed. Deleted:', deletedCount, 'Merged:', mergedCount, 'Added:', addedCount);
 
     // Reload data after cleanup
+    await loadCharacters();
+    await loadScenes();
+  };
+
+  // Handle "Sync All from AI" - completely replace database with LLM analysis
+  const handleSyncFromLLM = async (analysis: {
+    characters: Array<{ name: string; normalizedName: string; dialogueCount: number; firstAppearance: number }>;
+    scenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }>;
+  }) => {
+    console.log('[Cleanup] Syncing all data from LLM analysis...');
+    
+    // Get fresh data
+    const currentCharacters = useAppStore.getState().characters;
+    const currentScenes = useAppStore.getState().scenes;
+    
+    // Delete all existing characters
+    for (const char of currentCharacters) {
+      await window.api.db.deleteCharacter(char.id);
+    }
+    
+    // Delete all existing scenes
+    for (const scene of currentScenes) {
+      await window.api.db.deleteScene(scene.id);
+    }
+    
+    // Add all characters from LLM
+    for (const llmChar of analysis.characters) {
+      const newCharacter = {
+        id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: llmChar.normalizedName.toUpperCase(),
+        description: 'AI-detected character',
+        appearances: [],
+        dialogueCount: llmChar.dialogueCount,
+        firstAppearance: llmChar.firstAppearance,
+        arc: '',
+        age: '',
+        occupation: '',
+        personality: '',
+        backstory: '',
+        goals: '',
+        role: '',
+      };
+      await window.api.db.saveCharacter(newCharacter);
+    }
+    
+    // Add all scenes from LLM
+    for (const llmScene of analysis.scenes) {
+      const newScene = {
+        id: `scene-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        number: llmScene.number,
+        heading: llmScene.heading.toUpperCase(),
+        content: '',
+        startLine: llmScene.lineNumber,
+        endLine: llmScene.lineNumber,
+        characters: [],
+        summary: '',
+        mood: '',
+        notes: '',
+      };
+      await window.api.db.saveScene(newScene);
+    }
+    
+    console.log('[Cleanup] Sync complete. Added', analysis.characters.length, 'characters and', analysis.scenes.length, 'scenes');
+    
+    // Reload data
     await loadCharacters();
     await loadScenes();
   };
@@ -519,6 +626,7 @@ export default function Editor() {
         scenes={scenes}
         screenplayContent={screenplayContent}
         onApplyCleanup={handleApplyCleanup}
+        onSyncFromLLM={handleSyncFromLLM}
       />
     </div>
   );

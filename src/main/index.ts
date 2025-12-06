@@ -664,6 +664,12 @@ ipcMain.handle('ai:analyzeStoryline', async () => {
   return await aiClient.analyzeStoryline();
 });
 
+// LLM-powered screenplay analysis for accurate character/scene detection
+ipcMain.handle('ai:analyzeScreenplay', async (_, content: string) => {
+  if (!aiClient) throw new Error('AI client not initialized');
+  return await aiClient.analyzeScreenplayContent(content);
+});
+
 // Get single conversation
 ipcMain.handle('db:getConversation', async (_, id: string) => {
   if (!dbManager) throw new Error('No database open');

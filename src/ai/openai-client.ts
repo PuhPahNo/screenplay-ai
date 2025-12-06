@@ -941,5 +941,282 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
       throw error;
     }
   }
+
+  /**
+   * LLM-powered screenplay analysis for accurate character and scene detection.
+   * Uses GPT to intelligently parse the screenplay and identify:
+   * - Scene headings (even non-standard ones)
+   * - Characters (with duplicate detection and normalization)
+   * - Title page information
+   */
+  async analyzeScreenplayContent(content: string): Promise<{
+    title?: string;
+    author?: string;
+    scenes: Array<{
+      number: number;
+      heading: string;
+      location: string;
+      timeOfDay: string;
+      lineNumber: number;
+    }>;
+    characters: Array<{
+      name: string;
+      normalizedName: string;
+      aliases: string[];
+      dialogueCount: number;
+      firstAppearance: number;
+      description?: string;
+    }>;
+    duplicates: Array<{
+      names: string[];
+      suggestedName: string;
+      reason: string;
+    }>;
+  }> {
+    console.log('[AI] Starting LLM screenplay analysis...');
+    
+    // Split content into chunks if it's very long (to avoid token limits)
+    const MAX_CHUNK_SIZE = 30000; // characters
+    const chunks: string[] = [];
+    
+    if (content.length > MAX_CHUNK_SIZE) {
+      // Split by scene headings to maintain context
+      const lines = content.split('\n');
+      let currentChunk = '';
+      
+      for (const line of lines) {
+        if (currentChunk.length + line.length > MAX_CHUNK_SIZE && currentChunk.length > 0) {
+          chunks.push(currentChunk);
+          currentChunk = line;
+        } else {
+          currentChunk += (currentChunk ? '\n' : '') + line;
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+    } else {
+      chunks.push(content);
+    }
+
+    console.log(`[AI] Processing ${chunks.length} chunk(s)...`);
+
+    // Process each chunk and aggregate results
+    const allScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
+    const characterMap = new Map<string, { name: string; dialogueCount: number; firstAppearance: number; aliases: Set<string> }>();
+    let title: string | undefined;
+    let author: string | undefined;
+    let sceneCounter = 0;
+    let lineOffset = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log(`[AI] Analyzing chunk ${i + 1}/${chunks.length}...`);
+
+      try {
+        const completion = await this.openai.chat.completions.create({
+          model: 'gpt-5-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a professional screenplay parser. Analyze the provided screenplay text and extract structured data.
+
+IMPORTANT RULES:
+1. Scene headings start with INT., EXT., INT./EXT., I/E, EST., or can be forced with . or ! prefix
+2. Scene headings may include location and time of day (DAY, NIGHT, DUSK, DAWN, CONTINUOUS, etc.)
+3. Character names appear in ALL CAPS on their own line before dialogue
+4. Character names may have extensions like (V.O.), (O.S.), (CONT'D)
+5. Watch for duplicate characters - same person with different spellings (O'KEEFE vs O'KEEFFE)
+6. Ignore generic uppercase words that aren't character names (FADE IN, CUT TO, THE END, etc.)
+7. If you see a title page (Title:, Author:, etc.), extract that information
+
+Return ONLY valid JSON with this exact structure:
+{
+  "title": "string or null",
+  "author": "string or null", 
+  "scenes": [
+    {
+      "heading": "FULL SCENE HEADING TEXT",
+      "location": "Location name",
+      "timeOfDay": "DAY/NIGHT/etc",
+      "approximateLineNumber": 123
+    }
+  ],
+  "characters": [
+    {
+      "name": "CHARACTER NAME (normalized, uppercase)",
+      "variants": ["variant1", "variant2"],
+      "dialogueCount": 5,
+      "approximateFirstLine": 45
+    }
+  ],
+  "potentialDuplicates": [
+    {
+      "names": ["O'KEEFE", "O'KEEFFE"],
+      "suggestedName": "O'KEEFE",
+      "reason": "Same character with different spelling"
+    }
+  ]
+}`
+            },
+            {
+              role: 'user',
+              content: `Analyze this screenplay text and extract all scenes and characters:\n\n${chunk}`
+            }
+          ],
+          temperature: 0.1, // Low temperature for consistent parsing
+          max_completion_tokens: 4000,
+          response_format: { type: 'json_object' },
+        });
+
+        const response = completion.choices[0]?.message?.content || '{}';
+        const parsed = JSON.parse(response);
+
+        // Extract title/author from first chunk
+        if (i === 0) {
+          title = parsed.title || undefined;
+          author = parsed.author || undefined;
+        }
+
+        // Add scenes with adjusted line numbers
+        if (parsed.scenes && Array.isArray(parsed.scenes)) {
+          for (const scene of parsed.scenes) {
+            sceneCounter++;
+            allScenes.push({
+              number: sceneCounter,
+              heading: scene.heading || '',
+              location: scene.location || '',
+              timeOfDay: scene.timeOfDay || '',
+              lineNumber: (scene.approximateLineNumber || 0) + lineOffset,
+            });
+          }
+        }
+
+        // Aggregate characters
+        if (parsed.characters && Array.isArray(parsed.characters)) {
+          for (const char of parsed.characters) {
+            const normalizedName = (char.name || '').toUpperCase().trim();
+            if (!normalizedName) continue;
+
+            const existing = characterMap.get(normalizedName);
+            if (existing) {
+              existing.dialogueCount += char.dialogueCount || 0;
+              if (char.variants) {
+                char.variants.forEach((v: string) => existing.aliases.add(v.toUpperCase().trim()));
+              }
+            } else {
+              characterMap.set(normalizedName, {
+                name: normalizedName,
+                dialogueCount: char.dialogueCount || 0,
+                firstAppearance: (char.approximateFirstLine || 0) + lineOffset,
+                aliases: new Set(char.variants?.map((v: string) => v.toUpperCase().trim()) || []),
+              });
+            }
+          }
+        }
+
+        // Track line offset for next chunk
+        lineOffset += chunk.split('\n').length;
+
+      } catch (error) {
+        console.error(`[AI] Error analyzing chunk ${i + 1}:`, error);
+        // Continue with other chunks
+      }
+    }
+
+    // Find duplicates across the full character set
+    const duplicates: Array<{ names: string[]; suggestedName: string; reason: string }> = [];
+    const characterNames = Array.from(characterMap.keys());
+    const processedPairs = new Set<string>();
+
+    for (let i = 0; i < characterNames.length; i++) {
+      for (let j = i + 1; j < characterNames.length; j++) {
+        const name1 = characterNames[i];
+        const name2 = characterNames[j];
+        const pairKey = [name1, name2].sort().join('|');
+        
+        if (processedPairs.has(pairKey)) continue;
+        processedPairs.add(pairKey);
+
+        // Check for similar names (likely duplicates)
+        if (this.areSimilarNames(name1, name2)) {
+          const char1 = characterMap.get(name1)!;
+          const char2 = characterMap.get(name2)!;
+          
+          // Suggest the one with more dialogue as the canonical name
+          const suggestedName = char1.dialogueCount >= char2.dialogueCount ? name1 : name2;
+          
+          duplicates.push({
+            names: [name1, name2],
+            suggestedName,
+            reason: 'Similar character names - likely the same person',
+          });
+        }
+      }
+    }
+
+    // Convert character map to array
+    const characters = Array.from(characterMap.entries()).map(([name, data]) => ({
+      name: data.name,
+      normalizedName: name,
+      aliases: Array.from(data.aliases),
+      dialogueCount: data.dialogueCount,
+      firstAppearance: data.firstAppearance,
+    }));
+
+    console.log(`[AI] Analysis complete: ${allScenes.length} scenes, ${characters.length} characters, ${duplicates.length} potential duplicates`);
+
+    return {
+      title,
+      author,
+      scenes: allScenes,
+      characters,
+      duplicates,
+    };
+  }
+
+  /**
+   * Check if two character names are likely the same person (fuzzy matching)
+   */
+  private areSimilarNames(name1: string, name2: string): boolean {
+    // Normalize for comparison
+    const normalize = (s: string) => s.replace(/[^A-Z]/g, '');
+    const n1 = normalize(name1);
+    const n2 = normalize(name2);
+
+    // If one is a subset of the other
+    if (n1.includes(n2) || n2.includes(n1)) {
+      return Math.abs(n1.length - n2.length) <= 3;
+    }
+
+    // Levenshtein distance for similar spellings
+    const distance = this.levenshteinDistance(n1, n2);
+    const maxLen = Math.max(n1.length, n2.length);
+    
+    // Consider similar if distance is <= 20% of length
+    return distance <= Math.ceil(maxLen * 0.2);
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  private levenshteinDistance(s1: string, s2: string): number {
+    const m = s1.length;
+    const n = s2.length;
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+      }
+    }
+
+    return dp[m][n];
+  }
 }
 

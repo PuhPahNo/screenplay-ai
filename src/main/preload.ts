@@ -49,6 +49,8 @@ const api: WindowAPI = {
     analyzeStoryline: () => ipcRenderer.invoke('ai:analyzeStoryline'),
     summarizeConversation: (conversationId: string) => 
       ipcRenderer.invoke('ai:summarizeConversation', conversationId),
+    analyzeScreenplay: (content: string) => 
+      ipcRenderer.invoke('ai:analyzeScreenplay', content),
   },
   
   settings: {
