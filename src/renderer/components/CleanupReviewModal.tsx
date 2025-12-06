@@ -148,28 +148,69 @@ export function CleanupReviewModal({
         }
       }
       
-      // 1. Find characters in DB that LLM didn't find (orphaned)
+      // 1. Find INVALID entries that should NEVER be characters
+      // Helper function to detect invalid character names
+      const isInvalidCharacterName = (name: string): { invalid: boolean; reason: string } => {
+        const nameUpper = name.toUpperCase().trim();
+        
+        // Scene headings (with or without ! prefix)
+        if (/^!?(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i.test(nameUpper)) {
+          return { invalid: true, reason: 'This is a scene heading, not a character' };
+        }
+        
+        // Transitions
+        if (/^(CUT TO|FADE|DISSOLVE|SMASH CUT|JUMP CUT|MATCH CUT|IRIS|WIPE)[\s:]/i.test(nameUpper)) {
+          return { invalid: true, reason: 'This is a transition, not a character' };
+        }
+        
+        // Sound effects (ends with ! and looks like onomatopoeia)
+        if (/^[A-Z\-!]+!$/.test(nameUpper) && !/^[A-Z]+'?[A-Z]*!?$/.test(nameUpper)) {
+          return { invalid: true, reason: 'This looks like a sound effect, not a character' };
+        }
+        
+        // Common sound effects
+        if (/^(BANG|CRASH|BOOM|THUD|SLAM|RING|BEEP|HONK|SCREECH)!?$/i.test(nameUpper)) {
+          return { invalid: true, reason: 'This is a sound effect, not a character' };
+        }
+        
+        // Action cues
+        if (/^(CONTINUED|CONTINUOUS|LATER|MOMENTS LATER|END OF|FLASHBACK|INTERCUT|MONTAGE|SERIES OF|TITLE CARD|SUPER|CHYRON|MORE)/i.test(nameUpper)) {
+          return { invalid: true, reason: 'This is an action cue, not a character' };
+        }
+        
+        // Starts with formatting prefix
+        if (nameUpper.startsWith('!') || nameUpper.startsWith('.') || nameUpper.startsWith('@')) {
+          return { invalid: true, reason: 'This has a formatting prefix, not a character name' };
+        }
+        
+        // Contains colon at end (likely a transition or label)
+        if (nameUpper.endsWith(':')) {
+          return { invalid: true, reason: 'This looks like a label or transition' };
+        }
+        
+        return { invalid: false, reason: '' };
+      };
+      
       const llmCharNames = new Set(analysis.characters.map(c => c.normalizedName.toUpperCase()));
       const llmAliases = new Set<string>();
       analysis.characters.forEach(c => c.aliases.forEach(a => llmAliases.add(a.toUpperCase())));
       
-      // Also check if character name looks like a scene heading (misclassified)
-      const sceneHeadingPattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
-      
       for (const dbChar of characters) {
         const nameUpper = dbChar.name.toUpperCase().trim();
         
-        // Check if this "character" is actually a scene heading
-        if (sceneHeadingPattern.test(nameUpper)) {
+        // First check if it's clearly invalid
+        const invalidCheck = isInvalidCharacterName(dbChar.name);
+        if (invalidCheck.invalid) {
           allSuggestions.push({
             type: 'delete',
             category: 'character',
             items: [dbChar.name],
-            reason: 'This looks like a scene heading, not a character name',
+            reason: invalidCheck.reason,
           });
           continue;
         }
         
+        // Then check if LLM didn't find it
         if (!llmCharNames.has(nameUpper) && !llmAliases.has(nameUpper)) {
           allSuggestions.push({
             type: 'delete',

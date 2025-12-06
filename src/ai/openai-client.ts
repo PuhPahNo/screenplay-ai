@@ -776,10 +776,46 @@ export class AIClient {
         case 'create_character': {
           const charName = args.name.toUpperCase().trim();
           
-          // Check if this looks like a scene heading
-          const sceneHeadingPattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
+          // Comprehensive validation - reject anything that's NOT a character name
+          
+          // 1. Scene headings (with or without ! prefix)
+          const sceneHeadingPattern = /^!?(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
           if (sceneHeadingPattern.test(charName)) {
-            return `Skipped: "${charName}" looks like a scene heading, not a character`;
+            return `Skipped: "${charName}" is a scene heading, not a character`;
+          }
+          
+          // 2. Transitions (CUT TO, FADE, DISSOLVE, etc.)
+          const transitionPattern = /^(CUT TO|FADE|DISSOLVE|SMASH CUT|JUMP CUT|MATCH CUT|IRIS|WIPE)[\s:]?/i;
+          if (transitionPattern.test(charName)) {
+            return `Skipped: "${charName}" is a transition, not a character`;
+          }
+          
+          // 3. Sound effects and onomatopoeia (ends with ! or all caps with special chars)
+          const soundEffectPattern = /^[A-Z\-!]+!$/; // Like BANG!, CRASH!, HAAAAR!
+          if (soundEffectPattern.test(charName) && !charName.match(/^[A-Z]+'?[A-Z]*$/)) {
+            return `Skipped: "${charName}" looks like a sound effect, not a character`;
+          }
+          
+          // 4. Action cues that might be mistaken for characters
+          const actionCuePattern = /^(CONTINUED|CONTINUOUS|LATER|MORNING|NIGHT|DAY|EVENING|AFTERNOON|DUSK|DAWN|MOMENTS LATER|END OF|FLASHBACK|INTERCUT|MONTAGE|SERIES OF|TITLE CARD|SUPER|CHYRON)/i;
+          if (actionCuePattern.test(charName)) {
+            return `Skipped: "${charName}" is an action cue, not a character`;
+          }
+          
+          // 5. Contains typical non-name characters at the start
+          if (charName.startsWith('!') || charName.startsWith('.') || charName.startsWith('@')) {
+            return `Skipped: "${charName}" has formatting prefix, not a character name`;
+          }
+          
+          // 6. Check for excessive special characters (not a real name)
+          const specialCharCount = (charName.match(/[^A-Z0-9\s'.\-#]/g) || []).length;
+          if (specialCharCount > 2) {
+            return `Skipped: "${charName}" has too many special characters to be a name`;
+          }
+          
+          // 7. Too short to be a real character (single letter)
+          if (charName.length < 2) {
+            return `Skipped: "${charName}" is too short to be a character name`;
           }
           
           // Check for duplicates
@@ -811,13 +847,33 @@ export class AIClient {
         }
 
         case 'add_scene': {
-          const sceneHeading = args.heading.toUpperCase().trim();
+          let sceneHeading = args.heading.toUpperCase().trim();
           
-          // Check for duplicates
+          // Remove ! prefix if present (Fountain forced scene heading marker)
+          if (sceneHeading.startsWith('!')) {
+            sceneHeading = sceneHeading.substring(1).trim();
+          }
+          
+          // Remove . prefix if present (Fountain forced scene heading marker)
+          if (sceneHeading.startsWith('.') && !sceneHeading.startsWith('...')) {
+            sceneHeading = sceneHeading.substring(1).trim();
+          }
+          
+          // Validate it looks like a scene heading
+          const validScenePattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
+          if (!validScenePattern.test(sceneHeading)) {
+            // If it doesn't have INT/EXT, check if it was a forced heading
+            // Accept it but log a warning
+            console.log(`[AI] Creating scene without standard prefix: ${sceneHeading}`);
+          }
+          
+          // Check for duplicates (normalize for comparison)
           const existingScenes = await this.dbManager.getScenes();
-          const duplicateScene = existingScenes.find(s => 
-            s.heading.toUpperCase().trim() === sceneHeading
-          );
+          const normalizedHeading = sceneHeading.replace(/\s+/g, ' ').trim();
+          const duplicateScene = existingScenes.find(s => {
+            const existingNorm = s.heading.replace(/\s+/g, ' ').trim().toUpperCase();
+            return existingNorm === normalizedHeading;
+          });
           
           if (duplicateScene) {
             return `Scene "${sceneHeading}" already exists (Scene ${duplicateScene.number}) - skipping duplicate`;
@@ -1281,31 +1337,40 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
     };
 
     // Build a focused analysis prompt
-    const analysisPrompt = `You are an intelligent screenplay assistant. Analyze this screenplay and perform these actions IN ORDER:
+    const analysisPrompt = `You are an intelligent screenplay assistant. Carefully analyze this Fountain-format screenplay and perform these actions IN ORDER:
 
-**STEP 1 - Create Scenes:**
-For EACH scene heading (lines starting with INT., EXT., INT./EXT., I/E., or ! prefix), call add_scene with the heading.
+**STEP 1 - Create ALL Scenes:**
+Find EVERY scene heading in the screenplay. Scene headings are:
+- Lines starting with INT. or EXT. or INT./EXT. or I/E. or EST.
+- Lines starting with ! followed by INT. or EXT. (forced scene headings in Fountain)
+- Lines starting with . followed by text (forced scene headings)
 
-**STEP 2 - Create Characters:**
-For EACH character who SPEAKS dialogue (names that appear above dialogue in UPPERCASE), call create_character with their name.
-- ONLY create speaking characters (names above dialogue)
-- Do NOT create scene headings as characters
-- Do NOT create action descriptions as characters
+For EACH scene heading found, call add_scene with the FULL heading text.
+Include the ! prefix if present - it will be normalized automatically.
+
+**STEP 2 - Create ONLY Speaking Characters:**
+A CHARACTER is ONLY someone who SPEAKS dialogue. In screenplay format:
+- Character name appears ALONE on a line in UPPERCASE
+- Followed by their dialogue on the next lines
+
+DO NOT create these as characters:
+- Scene headings (INT., EXT., !EXT., etc.)
+- Transitions (CUT TO:, FADE OUT, DISSOLVE TO:, JUMP CUT:)
+- Sound effects (BANG!, CRASH!, onomatopoeia)
+- Time indicators (LATER, CONTINUOUS, MORNING)
+- Action descriptions or parentheticals
 
 **STEP 3 - Link Characters to Scenes:**
-After creating scenes and characters, for EACH character, call link_character_to_scene to link them to the scenes they appear in.
-- This updates the character's scene count
-- This updates each scene's character list
+After creating scenes and characters, link each character to the scenes where they SPEAK.
+Call link_character_to_scene for each character+scene combination.
 
-**EXAMPLE:**
-If Scene 1 has JOHN speaking, call:
-1. add_scene with "INT. OFFICE - DAY"
-2. create_character with "JOHN"
-3. link_character_to_scene with character_name="JOHN" and scene_number=1
+**CRITICAL RULES:**
+1. READ THE ENTIRE SCREENPLAY - don't stop early
+2. Create EVERY scene, even if similar headings exist
+3. Only create actual PEOPLE as characters
+4. Use the tools - don't just describe what you found
 
-**IMPORTANT:** Use the tools to CREATE and LINK - do not just describe what you found.
-
-Start analyzing now:`;
+Start analyzing the screenplay now and call the tools:`;
 
     // Call the existing chat function which has all the tool execution logic
     console.log('[AI] Calling chat function with analysis prompt...');
