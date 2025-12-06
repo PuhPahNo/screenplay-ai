@@ -213,17 +213,6 @@ export default function Editor() {
     }
   };
 
-  // LLM-powered analysis using the working AI chat infrastructure
-  const handleAnalyzeScreenplay = async () => {
-    if (!globalSettings?.openaiApiKey) {
-      alert('Please configure your OpenAI API key in Settings before analyzing.');
-      return;
-    }
-
-    // Open the cleanup modal which now uses LLM analysis
-    setShowCleanupModal(true);
-  };
-
   const handleSceneClick = useCallback((sceneStartLine: number) => {
     if (editorRef.current) {
       editorRef.current.scrollToLine(sceneStartLine);
@@ -533,28 +522,18 @@ export default function Editor() {
             <span>AI Chat</span>
           </button>
           <button
-            onClick={handleAnalyzeScreenplay}
-            disabled={!screenplayContent || !globalSettings?.openaiApiKey || isSaving}
-            title={!globalSettings?.openaiApiKey ? "Configure API key in Settings first" : "Parse screenplay to extract characters and scenes"}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border ${!screenplayContent || !globalSettings?.openaiApiKey || isSaving
-                ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed'
-                : 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700 shadow-md'
-              }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Analyze</span>
-          </button>
-          <button
             onClick={() => setShowCleanupModal(true)}
-            disabled={characters.length === 0 && scenes.length === 0}
-            title="Clean up duplicate or incorrectly detected characters and scenes"
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border ${characters.length === 0 && scenes.length === 0
+            disabled={!screenplayContent || !globalSettings?.openaiApiKey}
+            title={!globalSettings?.openaiApiKey 
+              ? "Configure API key in Settings first" 
+              : "AI analyzes your screenplay to detect characters & scenes, find duplicates, and sync database"}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border ${!screenplayContent || !globalSettings?.openaiApiKey
                 ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed'
-                : 'bg-amber-600 text-white border-amber-700 hover:bg-amber-700 shadow-md'
+                : 'bg-gradient-to-r from-purple-600 to-amber-500 text-white border-purple-700 hover:from-purple-700 hover:to-amber-600 shadow-md'
               }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>Clean Up</span>
+            <span>AI Analyze</span>
           </button>
           <button
             onClick={handleSave}
