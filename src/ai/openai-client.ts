@@ -415,12 +415,12 @@ export class AIClient {
       const isAgentMode = context.chatMode === 'agent' || context.chatMode === undefined; // Default to agent
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages,
         // Only include tools in agent mode
         ...(isAgentMode && {
-        tools,
-        tool_choice: 'auto',
+          tools,
+          tool_choice: 'auto',
           parallel_tool_calls: true,
         }),
         max_completion_tokens: 4000,
@@ -433,7 +433,7 @@ export class AIClient {
       }
 
       const responseMessage = completion.choices[0]?.message;
-      
+
       console.log('[AI-CHAT] OpenAI response received');
       console.log('[AI-CHAT] Has tool_calls:', !!responseMessage?.tool_calls);
       console.log('[AI-CHAT] Tool calls count:', responseMessage?.tool_calls?.length || 0);
@@ -476,7 +476,7 @@ export class AIClient {
           console.log(`[AI] Tool call iteration ${iterations}/${maxIterations}`);
 
           const nextResponse = await this.openai.chat.completions.create({
-            model: 'gpt-5-mini',
+            model: 'gpt-4o-mini',
             messages,
             // Include tools in case the model needs to call more
             ...(isAgentMode && {
@@ -608,21 +608,21 @@ export class AIClient {
             return `Character "${charName}" already exists - skipping duplicate`;
           }
 
-                const newCharacter = {
-                  id: uuidv4(),
+          const newCharacter = {
+            id: uuidv4(),
             name: charName,
             description: args.description || '',
             age: args.age || '',
             occupation: args.occupation || '',
-                  personality: args.personality || '',
-                  goals: args.goals || '',
-                  arc: '',
-                  relationships: {},
-                  appearances: [],
+            personality: args.personality || '',
+            goals: args.goals || '',
+            arc: '',
+            relationships: {},
+            appearances: [],
             notes: args.role ? `Role: ${args.role}` : '',
-                };
-                await this.dbManager.saveCharacter(newCharacter);
-                this.systemActions?.notifyUpdate();
+          };
+          await this.dbManager.saveCharacter(newCharacter);
+          this.systemActions?.notifyUpdate();
           return `✓ Created character: ${newCharacter.name}`;
         }
 
@@ -661,20 +661,20 @@ export class AIClient {
 
           const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
 
-                const newScene = {
-                  id: uuidv4(),
+          const newScene = {
+            id: uuidv4(),
             number: maxSceneNum + 1,
             heading: sceneHeading,
-                  location: '',
-                  timeOfDay: '',
-                  summary: args.summary || '',
-                  characters: args.characters || [],
-                  startLine: 0,
-                  endLine: 0,
-                  content: '',
-                };
-                await this.dbManager.saveScene(newScene);
-                this.systemActions?.notifyUpdate();
+            location: '',
+            timeOfDay: '',
+            summary: args.summary || '',
+            characters: args.characters || [],
+            startLine: 0,
+            endLine: 0,
+            content: '',
+          };
+          await this.dbManager.saveScene(newScene);
+          this.systemActions?.notifyUpdate();
           return `✓ Created Scene ${newScene.number}: ${newScene.heading}`;
         }
 
@@ -808,8 +808,8 @@ export class AIClient {
         }
 
         case 'delete_scene': {
-                await this.dbManager.deleteScene(args.id);
-                this.systemActions?.notifyUpdate();
+          await this.dbManager.deleteScene(args.id);
+          this.systemActions?.notifyUpdate();
           return `✓ Deleted scene with ID: ${args.id}`;
         }
 
@@ -996,11 +996,11 @@ export class AIClient {
           console.log('[AI-METADATA] Setting screenplay metadata:', args);
           const results: string[] = [];
           if (args.title) {
-                if (this.systemActions) {
+            if (this.systemActions) {
               console.log('[AI-METADATA] Setting title to:', args.title);
               this.systemActions.setScreenplayTitle(args.title);
               results.push(`✓ Title set to: "${args.title}"`);
-                } else {
+            } else {
               console.log('[AI-METADATA] ERROR: No systemActions available for title!');
             }
           }
@@ -1024,28 +1024,28 @@ export class AIClient {
 
         // === SYSTEM ACTIONS ===
         case 'save_screenplay': {
-                if (this.systemActions) {
-                  await this.systemActions.saveScreenplay();
+          if (this.systemActions) {
+            await this.systemActions.saveScreenplay();
             return '✓ Screenplay saved successfully.';
-                }
+          }
           return '✗ Save functionality not available.';
         }
 
         case 'export_screenplay': {
-                if (this.systemActions) {
-                  await this.systemActions.exportScreenplay(args.format);
+          if (this.systemActions) {
+            await this.systemActions.exportScreenplay(args.format);
             return `✓ Screenplay exported to ${args.format} successfully.`;
-                }
+          }
           return '✗ Export functionality not available.';
         }
 
         case 'update_content': {
-                if (this.systemActions && this.systemActions.previewUpdate) {
-                  this.systemActions.previewUpdate({
-                    original: args.original_text,
-                    modified: args.new_text,
-                    description: args.description
-                  });
+          if (this.systemActions && this.systemActions.previewUpdate) {
+            this.systemActions.previewUpdate({
+              original: args.original_text,
+              modified: args.new_text,
+              description: args.description
+            });
             return `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
           }
           return '✗ Content update functionality not available.';
@@ -1115,7 +1115,7 @@ Arc: ${characterInfo.arc}
       }
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1140,7 +1140,7 @@ Arc: ${characterInfo.arc}
   async expandScene(outline: string): Promise<string> {
     try {
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1176,7 +1176,7 @@ Arc: ${characterInfo.arc}
         .join('\n\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1241,7 +1241,7 @@ Respond in JSON format with this structure:
       const contextLines = lines.slice(-10).join('\n');
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1270,7 +1270,7 @@ Respond in JSON format with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -1321,7 +1321,7 @@ Return a JSON object with this structure:
       const contextPrompt = this.contextBuilder.buildContextPrompt(context);
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
