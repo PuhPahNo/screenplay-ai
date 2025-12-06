@@ -1401,6 +1401,16 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
     const createdScenes: Array<{ number: number; heading: string; location: string; timeOfDay: string; lineNumber: number }> = [];
     let sceneCounter = 0;
 
+    // CLEAR ALL EXISTING SCENES before analysis
+    // This ensures all scenes get fresh line numbers and proper ordering
+    console.log('[AI-ANALYSIS] Clearing existing scenes for fresh analysis...');
+    const existingScenes = await this.dbManager.getScenes();
+    for (const scene of existingScenes) {
+      await this.dbManager.deleteScene(scene.id);
+    }
+    console.log(`[AI-ANALYSIS] Deleted ${existingScenes.length} existing scenes`);
+    this.systemActions?.notifyUpdate();
+
     // Use a MINIMAL context - don't show existing database items
     // This forces the AI to analyze the content freshly and create items via tools
     const context: AIContext = {
@@ -1413,10 +1423,12 @@ Return detailed JSON analysis with specific examples and actionable feedback.`,
     // Build a focused analysis prompt
     const analysisPrompt = `You are an intelligent screenplay assistant. You MUST analyze this screenplay and call tools to register what you find.
 
-IMPORTANT: The database may already have some items. Your job is to:
-1. Find ALL scenes and characters in the screenplay content below
-2. Call the tools to add them (the tools will handle duplicates)
-3. DO NOT SKIP items just because you think they might exist
+IMPORTANT: The scene database has been CLEARED. You must create ALL scenes fresh.
+Your job is to:
+1. Find EVERY scene in the screenplay content below
+2. Call add_scene for EACH scene with accurate line_number
+3. Create all speaking characters
+4. The scenes will be sorted chronologically by line_number at the end
 
 **STEP 0 - FIRST: Extract Title Page Information:**
 Look at the VERY FIRST LINES of the screenplay for title/author.
