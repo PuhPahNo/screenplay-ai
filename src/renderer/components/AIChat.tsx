@@ -61,6 +61,7 @@ function groupConversations(conversations: Conversation[]) {
 }
 
 // Memoized message bubble component to prevent re-renders
+// Key optimization: Only parse markdown for assistant messages, user messages are plain text
 const MessageBubble = memo(function MessageBubble({ 
   msg, 
   formatTokens 
@@ -68,29 +69,35 @@ const MessageBubble = memo(function MessageBubble({
   msg: AIMessage; 
   formatTokens: (tokens: number) => string;
 }) {
+  // User messages are typically plain text - skip expensive markdown parsing
+  const isUser = msg.role === 'user';
+  
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-          msg.role === 'user'
+          isUser
             ? 'bg-primary-600 text-white'
             : 'bg-gray-100 dark:bg-dark-bg text-gray-800 dark:text-gray-200'
         }`}
       >
-        <div className={`text-sm prose prose-sm dark:prose-invert max-w-none 
-          prose-p:my-2 prose-p:leading-relaxed
-          prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
-          prose-ul:my-2 prose-li:my-0.5
-          prose-strong:font-semibold
-          prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-gray-200 dark:prose-code:bg-gray-700
-          ${msg.role === 'user' 
-            ? 'prose-p:text-white prose-headings:text-white prose-strong:text-white prose-li:text-white' 
-            : 'prose-p:text-gray-800 dark:prose-p:text-gray-200'
-        }`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-        </div>
+        {isUser ? (
+          // User messages: Simple text rendering (much faster)
+          <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
+        ) : (
+          // Assistant messages: Full markdown rendering
+          <div className="text-sm prose prose-sm dark:prose-invert max-w-none 
+            prose-p:my-2 prose-p:leading-relaxed
+            prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-2
+            prose-ul:my-2 prose-li:my-0.5
+            prose-strong:font-semibold
+            prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-gray-200 dark:prose-code:bg-gray-700
+            prose-p:text-gray-800 dark:prose-p:text-gray-200">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          </div>
+        )}
         {/* Token usage for AI responses */}
-        {msg.role === 'assistant' && msg.tokenUsage && (
+        {!isUser && msg.tokenUsage && (
           <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
             <BarChart3 className="w-3 h-3" />
             <span>{formatTokens(msg.tokenUsage.promptTokens)} in</span>
@@ -103,6 +110,10 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     </div>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if the message content actually changed
+  return prevProps.msg.id === nextProps.msg.id && 
+         prevProps.msg.content === nextProps.msg.content;
 });
 
 // How many messages to show initially (recent ones)
@@ -131,7 +142,7 @@ export default function AIChat() {
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const [showAllMessages, setShowAllMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Filter and limit messages for performance
   const filteredMessages = useMemo(() => {
     return aiHistory.filter((msg) => msg.role !== 'system');
@@ -272,11 +283,11 @@ export default function AIChat() {
           </div>
       </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {filteredMessages.length === 0 ? (
-            <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
-              <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
+          <div className="text-center text-gray-500 dark:text-gray-400 mt-8">
+            <Bot className="w-12 h-12 mx-auto mb-4 text-primary-500" />
               <p className="text-sm font-medium">Start a conversation</p>
               <p className="text-xs mt-2 max-w-xs mx-auto">
                 Ask me anything about your screenplay - characters, plot, dialogue, or structure.
@@ -321,9 +332,9 @@ export default function AIChat() {
                 />
               ))}
             </>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
       {/* Input */}
       <div className="border-t border-gray-200 dark:border-dark-border p-4">

@@ -91,6 +91,15 @@ If the user asks you to make changes, explain what you WOULD do and suggest they
 
   buildContextPrompt(context: AIContext): string {
     let prompt = '';
+    
+    // Debug logging to see what we receive
+    console.log('[ContextBuilder] Building context prompt with:', {
+      charactersCount: context.characters?.length || 0,
+      scenesCount: context.scenes?.length || 0,
+      hasStoryline: !!context.storyline,
+      contentLength: context.currentContent?.length || 0,
+      chatMode: context.chatMode,
+    });
 
     // Include conversation summary if present (from previous context compression)
     if (context.conversationSummary) {
@@ -104,57 +113,74 @@ If the user asks you to make changes, explain what you WOULD do and suggest they
 
     // Add characters
     if (context.characters && context.characters.length > 0) {
-      prompt += '## CHARACTERS:\n\n';
+      prompt += '## CHARACTERS IN DATABASE:\n\n';
+      prompt += `(${context.characters.length} characters total. Some may have detailed profiles, others may just have names.)\n\n`;
       for (const char of context.characters) {
-        prompt += `**${char.name}**\n`;
-        if (char.description) {
-          prompt += `Description: ${char.description}\n`;
+        prompt += `**${char.name}**`;
+        
+        // Check if character has any details filled in
+        const hasDetails = char.description || char.age || char.occupation || char.personality || char.goals || char.arc;
+        
+        if (!hasDetails) {
+          prompt += ' - (exists in database, no detailed profile yet)\n';
+        } else {
+          prompt += '\n';
+          if (char.description) {
+            prompt += `  Description: ${char.description}\n`;
+          }
+          if (char.age) {
+            prompt += `  Age: ${char.age}\n`;
+          }
+          if (char.occupation) {
+            prompt += `  Occupation: ${char.occupation}\n`;
+          }
+          if (char.personality) {
+            prompt += `  Personality: ${char.personality}\n`;
+          }
+          if (char.goals) {
+            prompt += `  Goals: ${char.goals}\n`;
+          }
+          if (char.arc) {
+            prompt += `  Arc: ${char.arc}\n`;
+          }
         }
-        if (char.age) {
-          prompt += `Age: ${char.age}\n`;
-        }
-        if (char.occupation) {
-          prompt += `Occupation: ${char.occupation}\n`;
-        }
-        if (char.personality) {
-          prompt += `Personality: ${char.personality}\n`;
-        }
-        if (char.goals) {
-          prompt += `Goals: ${char.goals}\n`;
-        }
-        if (char.arc) {
-          prompt += `Arc: ${char.arc}\n`;
-        }
-        if (char.appearances.length > 0) {
-          prompt += `Appears in ${char.appearances.length} scene(s)\n`;
+        if (char.appearances && char.appearances.length > 0) {
+          prompt += `  Appears in ${char.appearances.length} scene(s)\n`;
         }
         if (char.relationships && Object.keys(char.relationships).length > 0) {
-          prompt += 'Relationships:\n';
+          prompt += '  Relationships:\n';
           for (const [relName, relDesc] of Object.entries(char.relationships)) {
-            prompt += `- ${relName}: ${relDesc}\n`;
+            prompt += `    - ${relName}: ${relDesc}\n`;
           }
         }
         if (char.notes) {
-          prompt += `Notes: ${char.notes}\n`;
+          prompt += `  Notes: ${char.notes}\n`;
         }
         prompt += '\n';
       }
+    } else {
+      prompt += '## CHARACTERS: No characters in database yet.\n\n';
     }
 
     // Add scenes (send ALL scenes for complete context)
     if (context.scenes && context.scenes.length > 0) {
-      prompt += '## SCENES:\n\n';
+      prompt += '## SCENES IN DATABASE:\n\n';
+      prompt += `(${context.scenes.length} scenes total)\n\n`;
       for (const scene of context.scenes) {
-        prompt += `Scene ${scene.number}: ${scene.heading}\n`;
+        prompt += `**Scene ${scene.number}**: ${scene.heading}\n`;
         if (scene.summary) {
-          prompt += `Summary: ${scene.summary}\n`;
+          prompt += `  Summary: ${scene.summary}\n`;
         }
-        if (scene.characters.length > 0) {
-          prompt += `Characters: ${scene.characters.join(', ')}\n`;
+        if (scene.characters && scene.characters.length > 0) {
+          prompt += `  Characters: ${scene.characters.join(', ')}\n`;
+        }
+        if (scene.mood) {
+          prompt += `  Mood: ${scene.mood}\n`;
         }
         prompt += '\n';
       }
-      prompt += `Total Scenes: ${context.scenes.length}\n\n`;
+    } else {
+      prompt += '## SCENES: No scenes in database yet.\n\n';
     }
 
     // Add storyline

@@ -422,15 +422,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Get current conversation to check for existing summary
       const conversation = await window.api.db.getConversation(conversationId);
 
+      // Only send last 10 messages to AI to reduce token usage and improve performance
+      // Older context is summarized in conversationSummary
+      const recentHistory = get().aiHistory.slice(-10);
+      
       const context: AIContext = {
         characters,
         scenes,
         storyline: storyline || undefined,
         currentContent: screenplayContent,
-        history: get().aiHistory,
+        history: recentHistory, // Only recent messages, not full history
         conversationSummary: conversation?.contextSummary,
         chatMode, // Pass current mode to AI
       };
+      
+      // Debug: Log what we're sending
+      console.log('[AppStore] Sending AI context:', {
+        charactersCount: characters.length,
+        characterNames: characters.map(c => c.name),
+        scenesCount: scenes.length,
+        sceneHeadings: scenes.map(s => s.heading),
+        historyCount: recentHistory.length,
+        totalHistoryCount: get().aiHistory.length,
+        contentLength: screenplayContent?.length || 0,
+        chatMode,
+      });
 
       const userMessage: AIMessage = {
         id: Date.now().toString(),
