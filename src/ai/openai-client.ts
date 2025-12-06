@@ -1110,7 +1110,7 @@ Be thorough! Find ALL characters and scenes. Do not skip any.`,
 
       try {
         const completion = await this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           messages,
           tools: analysisTools,
           tool_choice: 'auto',
