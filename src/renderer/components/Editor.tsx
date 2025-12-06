@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/app-store';
-import { Check, X, AlertCircle, Upload, Users, Film, BarChart3, Save, MessageSquare } from 'lucide-react';
+import { Check, X, AlertCircle, Upload, Users, Film, BarChart3, Save, MessageSquare, Sparkles } from 'lucide-react';
 import ScreenplayEditor, { type ScreenplayEditorHandle, type EditorStatus } from './ScreenplayEditor';
 import FormattingToolbar from './FormattingToolbar';
 import AIChat from './AIChat';
@@ -8,6 +8,7 @@ import CharacterPanel from './CharacterPanel';
 import ScenePanel from './ScenePanel';
 import StorylinePanel from './StorylinePanel';
 import AgenticAssistant from './AgenticAssistant';
+import { CleanupReviewModal, type CleanupSuggestion } from './CleanupReviewModal';
 import type { ElementType } from '../../shared/types';
 
 export default function Editor() {
@@ -24,7 +25,11 @@ export default function Editor() {
     globalSettings,
     pendingEdit,
     applyEdit,
-    rejectEdit
+    rejectEdit,
+    characters,
+    scenes,
+    loadCharacters,
+    loadScenes,
   } = useAppStore();
 
   console.log('[Editor] Project:', currentProject?.name, 'Content length:', screenplayContent?.length);
@@ -33,6 +38,7 @@ export default function Editor() {
   const [isSaving, setIsSaving] = useState(false);
   const [currentElement, setCurrentElement] = useState<ElementType>('action');
   const [isFormatLocked, setIsFormatLocked] = useState(false);
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
   const [editorStatus, setEditorStatus] = useState<EditorStatus>({
     elementType: 'action',
     lineNumber: 1,
@@ -154,6 +160,63 @@ export default function Editor() {
     }
   }, []);
 
+  // Handle cleanup suggestions
+  const handleApplyCleanup = async (suggestions: CleanupSuggestion[]) => {
+    for (const suggestion of suggestions) {
+      if (suggestion.category === 'character') {
+        if (suggestion.type === 'delete') {
+          // Delete each character in the items list
+          for (const charName of suggestion.items) {
+            const char = characters.find(c => c.name === charName);
+            if (char) {
+              await window.api.db.deleteCharacter(char.id);
+            }
+          }
+        } else if (suggestion.type === 'merge' && suggestion.targetName) {
+          // Keep the target, delete the rest
+          const targetChar = characters.find(c => c.name === suggestion.targetName);
+          for (const charName of suggestion.items) {
+            if (charName !== suggestion.targetName) {
+              const char = characters.find(c => c.name === charName);
+              if (char) {
+                // Merge appearances into target
+                if (targetChar) {
+                  const mergedAppearances = [...new Set([
+                    ...targetChar.appearances,
+                    ...char.appearances
+                  ])];
+                  await window.api.db.saveCharacter({
+                    ...targetChar,
+                    appearances: mergedAppearances,
+                  });
+                }
+                await window.api.db.deleteCharacter(char.id);
+              }
+            }
+          }
+        }
+      } else if (suggestion.category === 'scene') {
+        if (suggestion.type === 'delete') {
+          // Delete scenes by extracting ID from the label
+          for (const sceneLabel of suggestion.items) {
+            const match = sceneLabel.match(/Scene (\d+):/);
+            if (match) {
+              const sceneNum = parseInt(match[1], 10);
+              const scene = scenes.find(s => s.number === sceneNum);
+              if (scene) {
+                await window.api.db.deleteScene(scene.id);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Reload data after cleanup
+    await loadCharacters();
+    await loadScenes();
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -238,6 +301,18 @@ export default function Editor() {
           >
             <BarChart3 className="w-4 h-4" />
             <span>Analyze</span>
+          </button>
+          <button
+            onClick={() => setShowCleanupModal(true)}
+            disabled={characters.length === 0 && scenes.length === 0}
+            title="Clean up duplicate or incorrectly detected characters and scenes"
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 border ${characters.length === 0 && scenes.length === 0
+                ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed'
+                : 'bg-amber-600 text-white border-amber-700 hover:bg-amber-700 shadow-md'
+              }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Clean Up</span>
           </button>
           <button
             onClick={handleSave}
@@ -396,6 +471,15 @@ export default function Editor() {
 
       {/* Agentic AI Assistant */}
       <AgenticAssistant />
+
+      {/* Cleanup Modal */}
+      <CleanupReviewModal
+        isOpen={showCleanupModal}
+        onClose={() => setShowCleanupModal(false)}
+        characters={characters}
+        scenes={scenes}
+        onApplyCleanup={handleApplyCleanup}
+      />
     </div>
   );
 }

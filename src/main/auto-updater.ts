@@ -1,11 +1,11 @@
-import { dialog, BrowserWindow, Notification, app } from 'electron';
+import { dialog, BrowserWindow, Notification } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 // Track if user chose auto-restart
 let shouldAutoRestart = false;
-let downloadingVersion = '';
-let lastProgressNotification = 0;
-let isDownloading = false;
+let _downloadingVersion = '';
+let _lastProgressNotification = 0;
+let _isDownloading = false;
 
 export function setupAutoUpdater(mainWindow: BrowserWindow | null) {
   // Configure auto-updater

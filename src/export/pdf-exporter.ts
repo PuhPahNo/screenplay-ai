@@ -110,7 +110,7 @@ export class PDFExporter {
     return line.endsWith('TO:') || line === 'FADE IN:' || line === 'FADE OUT.';
   }
 
-  private static isLikelyDialogue(line: string, allLines: string[], index: number): boolean {
+  private static isLikelyDialogue(_line: string, allLines: string[], index: number): boolean {
     // Check if previous non-empty line was a character name or parenthetical
     for (let i = index - 1; i >= 0; i--) {
       const prevLine = allLines[i].trim();

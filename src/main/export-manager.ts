@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 import type { Scene, Character } from '../shared/types';
 
 export interface ExportOptions {
@@ -16,7 +15,7 @@ export class ExportManager {
    */
   async exportToFountain(
     scenes: Scene[],
-    characters: Character[],
+    _characters: Character[], // Unused but kept for API consistency
     outputPath: string,
     options: ExportOptions = {}
   ): Promise<void> {
@@ -61,7 +60,7 @@ export class ExportManager {
    */
   async exportToText(
     scenes: Scene[],
-    characters: Character[],
+    _characters: Character[],
     outputPath: string,
     options: ExportOptions = {}
   ): Promise<void> {
@@ -117,7 +116,7 @@ export class ExportManager {
    */
   async exportToFinalDraft(
     scenes: Scene[],
-    characters: Character[],
+    _characters: Character[],
     outputPath: string,
     options: ExportOptions = {}
   ): Promise<void> {
@@ -180,7 +179,7 @@ export class ExportManager {
    */
   async exportToPDF(
     scenes: Scene[],
-    characters: Character[],
+    _characters: Character[],
     outputPath: string,
     options: ExportOptions = {}
   ): Promise<void> {
@@ -268,13 +267,12 @@ export class ExportManager {
    * Create a simple PDF (minimal implementation)
    * For production, use pdfkit or puppeteer
    */
-  private createSimplePDF(content: string, title: string): Buffer {
+  private createSimplePDF(content: string, _title: string): Buffer {
     // This creates a very basic PDF structure
     // The text is embedded as-is without proper formatting
     
     const textLines = content.split('\n');
-    let objects: string[] = [];
-    let objectOffsets: number[] = [];
+    const objectOffsets: number[] = [];
     let currentOffset = 0;
     
     // PDF header

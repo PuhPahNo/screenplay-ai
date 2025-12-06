@@ -113,11 +113,34 @@ export class FountainParser {
     return { location, timeOfDay };
   }
   
+  // Common words/phrases that are NOT characters when in all caps
+  private static readonly NOT_CHARACTERS = new Set([
+    'THE END', 'CONTINUED', 'MORE', 'FADE IN', 'FADE OUT', 'FADE TO BLACK',
+    'CUT TO', 'DISSOLVE TO', 'SMASH CUT TO', 'MATCH CUT TO', 'JUMP CUT TO',
+    'TIME CUT', 'INTERCUT', 'BACK TO', 'FLASHBACK', 'END FLASHBACK',
+    'DREAM SEQUENCE', 'END DREAM SEQUENCE', 'MONTAGE', 'END MONTAGE',
+    'SERIES OF SHOTS', 'END SERIES OF SHOTS', 'CONTINUOUS', 'LATER',
+    'MOMENTS LATER', 'SAME TIME', 'SPLIT SCREEN', 'END SPLIT SCREEN',
+    'STOCK SHOT', 'ANGLE ON', 'CLOSE ON', 'INSERT', 'SUPER', 'TITLE',
+    'SUBTITLE', 'V.O.', 'O.S.', 'O.C.', 'CONT\'D', 'CONTD', 'PRE-LAP',
+    'END OF ACT', 'ACT ONE', 'ACT TWO', 'ACT THREE', 'END OF SHOW',
+    'COLD OPEN', 'TEASER', 'END TEASER', 'TAG', 'END TAG', 'BLACKOUT',
+    'WHITE OUT', 'SMASH TO', 'FLASH TO', 'CUT BACK TO', 'HARD CUT TO',
+  ]);
+
   private static isCharacterName(line: string): boolean {
     const trimmed = line.trim();
     
     // Must be all caps and not empty
     if (!trimmed || trimmed !== trimmed.toUpperCase()) {
+      return false;
+    }
+    
+    // Strip parenthetical extensions for checking (V.O., O.S., etc.)
+    const nameOnly = trimmed.replace(/\s*\([^)]+\)\s*$/, '').trim();
+    
+    // Must not be in the NOT_CHARACTERS list
+    if (this.NOT_CHARACTERS.has(nameOnly)) {
       return false;
     }
     
@@ -138,24 +161,30 @@ export class FountainParser {
       return false;
     }
     
-    // Must not be page break indicators
-    if (trimmed.match(/^(PAGE|ACT|SCENE)\s+\d+/)) {
+    // Must not be page break indicators or act markers
+    if (trimmed.match(/^(PAGE|ACT|SCENE|EPISODE)\s+\d+/i) ||
+        trimmed.match(/^(PAGE|ACT|SCENE|EPISODE)\s+(ONE|TWO|THREE|FOUR|FIVE)/i)) {
+      return false;
+    }
+    
+    // Must not be parenthetical (starts and ends with parens)
+    if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
       return false;
     }
     
     // Reasonable length for character name (not full sentences)
-    if (trimmed.length > 40 || trimmed.length < 2) {
+    if (nameOnly.length > 40 || nameOnly.length < 2) {
       return false;
     }
     
-    // Must not contain lowercase letters (already checked above but being explicit)
     // Must contain at least one letter
-    if (!/[A-Z]/.test(trimmed)) {
+    if (!/[A-Z]/.test(nameOnly)) {
       return false;
     }
     
-    // Common non-character patterns
-    if (trimmed === 'THE END' || trimmed === 'CONTINUED' || trimmed === 'MORE') {
+    // Character names typically don't have more than 3-4 words
+    const words = nameOnly.split(/\s+/);
+    if (words.length > 5) {
       return false;
     }
     

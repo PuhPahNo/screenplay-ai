@@ -563,12 +563,32 @@ export class DatabaseManager {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     
+    // Guard against oversized content that could cause RangeError
+    const MAX_CONTENT_LENGTH = 100000; // 100KB limit per message
+    const content = message.content.length > MAX_CONTENT_LENGTH 
+      ? message.content.substring(0, MAX_CONTENT_LENGTH) + '\n\n[Content truncated]'
+      : message.content;
+    
+    // Don't store full context - it causes exponential storage growth
+    // Only store a minimal reference if needed
+    let contextUsedStr: string | null = null;
+    if (message.contextUsed) {
+      // Only store metadata, not full content
+      const minimalContext = {
+        characterCount: message.contextUsed.characters?.length || 0,
+        sceneCount: message.contextUsed.scenes?.length || 0,
+        chatMode: message.contextUsed.chatMode,
+        // Omit: currentContent, history, full character/scene data
+      };
+      contextUsedStr = JSON.stringify(minimalContext);
+    }
+    
     stmt.run(
       message.id,
       message.role,
-      message.content,
+      content,
       message.timestamp,
-      message.contextUsed ? JSON.stringify(message.contextUsed) : null,
+      contextUsedStr,
       message.conversationId || null,
       message.tokenUsage ? JSON.stringify(message.tokenUsage) : null
     );

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, KeyboardEvent, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { AutoFormatter } from '../../screenplay/auto-formatter';
+import { FountainParserAdapter } from '../fountain/parser';
 import type { ElementType } from '../../shared/types';
 import '../styles/screenplay.css';
 
@@ -84,30 +85,50 @@ const ScreenplayEditor = forwardRef<ScreenplayEditorHandle, ScreenplayEditorProp
 
     console.log('[ScreenplayEditor] Initializing content, length:', content?.length);
 
-    const lines = content ? content.split('\n') : [''];
+    // Normalize content to fix excessive blank lines
+    const normalizedContent = FountainParserAdapter.normalizeContent(content || '');
+    
+    // Parse for better element detection
+    const parsed = FountainParserAdapter.parse(normalizedContent);
+    
     editorRef.current.innerHTML = '';
 
-    // Always create at least one line
-    if (lines.length === 0) {
-      lines.push('');
+    // Use parsed tokens for accurate element typing
+    if (parsed.tokens.length === 0) {
+      // Empty document - create one blank line
+      const lineDiv = createLineElement('', 0);
+      editorRef.current.appendChild(lineDiv);
+      setLineCount(1);
+    } else {
+      parsed.tokens.forEach((token, index) => {
+        const lineDiv = createLineElementFromToken(token, index);
+        editorRef.current!.appendChild(lineDiv);
+      });
+      setLineCount(parsed.tokens.length);
     }
 
-    lines.forEach((lineText, index) => {
-      const lineDiv = createLineElement(lineText, index);
-      editorRef.current!.appendChild(lineDiv);
-    });
-
-    setLineCount(lines.length);
-    console.log('[ScreenplayEditor] Created', lines.length, 'lines');
+    console.log('[ScreenplayEditor] Created', parsed.tokens.length, 'lines from normalized content');
 
     // Scroll to top after initializing content
     requestAnimationFrame(() => {
       if (editorRef.current) {
         editorRef.current.scrollTop = 0;
-        // Let scroll handler update page number naturally
         console.log('[ScreenplayEditor] Scrolled to top (RAF)');
       }
     });
+  };
+
+  // Create line element from parsed token (more accurate)
+  const createLineElementFromToken = (token: { type: ElementType; text: string }, index: number): HTMLDivElement => {
+    const div = document.createElement('div');
+    div.className = 'screenplay-line';
+    div.setAttribute('data-line-index', index.toString());
+    div.setAttribute('data-element-type', token.type);
+    
+    applyElementFormatting(div, token.type);
+    div.textContent = token.text || '';
+    
+    return div;
   };
 
   const handleScroll = () => {

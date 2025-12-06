@@ -5,7 +5,7 @@ import chokidar from 'chokidar';
 import type { ProjectSettings } from '../shared/types';
 
 export class ProjectManager {
-  private projectPath: string;
+  private _projectPath: string;
   private screenplayPath: string;
   private metaPath: string;
   private settingsPath: string;
@@ -14,7 +14,7 @@ export class ProjectManager {
   private isSaving: boolean = false;
 
   constructor(projectPath: string) {
-    this.projectPath = projectPath;
+    this._projectPath = projectPath;
     
     // Default path
     const defaultPath = path.join(projectPath, 'screenplay.fountain');

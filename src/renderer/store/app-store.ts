@@ -447,12 +447,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const response = await window.api.ai.chat(message, context);
 
+      // Don't store full context - it causes exponential storage growth
+      // Store only minimal metadata to avoid RangeError: Invalid string length
       const assistantMessage: AIMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: response.content,
         timestamp: Date.now(),
-        contextUsed: context,
+        // contextUsed intentionally omitted - storing full screenplay/history causes DB bloat
         conversationId,
         tokenUsage: response.tokenUsage,
       };

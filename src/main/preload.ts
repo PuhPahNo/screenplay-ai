@@ -103,6 +103,15 @@ const api: WindowAPI = {
   off: (channel: string, callback: (...args: any[]) => void) => {
     ipcRenderer.removeListener(channel, callback);
   },
+
+  // Editor operations (primarily for IPC communication)
+  editor: {
+    previewUpdate: (edit) => {
+      // This is called from the main process, not to the main process
+      // The actual listener is set up via 'on' in App.tsx
+      console.log('[Preload] Editor preview update:', edit);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);
