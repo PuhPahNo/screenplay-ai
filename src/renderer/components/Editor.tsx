@@ -254,38 +254,51 @@ export default function Editor() {
             }
           }
         } else if (suggestion.type === 'merge' && suggestion.targetName) {
-          // Keep the target, delete the rest
-          const targetChar = currentCharacters.find(c => 
-            c.name.toUpperCase().trim() === suggestion.targetName!.toUpperCase().trim()
-          );
+          // Find ALL characters with matching names (including exact duplicates)
+          const targetNameNorm = suggestion.targetName.toUpperCase().trim();
           
-          if (!targetChar) {
-            console.warn('[Cleanup] Target character not found:', suggestion.targetName);
-            continue;
+          // Get all characters that match target name OR any of the items
+          const allNamesToMerge = new Set<string>([targetNameNorm]);
+          for (const itemName of suggestion.items) {
+            allNamesToMerge.add(itemName.toUpperCase().trim());
           }
           
-          console.log('[Cleanup] Merging into:', targetChar.name);
+          const charsToMerge = currentCharacters.filter(c => 
+            allNamesToMerge.has(c.name.toUpperCase().trim())
+          );
           
-          for (const charName of suggestion.items) {
-            if (charName.toUpperCase().trim() !== suggestion.targetName.toUpperCase().trim()) {
-              const char = currentCharacters.find(c => 
-                c.name.toUpperCase().trim() === charName.toUpperCase().trim()
-              );
-              if (char) {
-                // Merge appearances into target
-                const mergedAppearances = [...new Set([
-                  ...targetChar.appearances,
-                  ...char.appearances
-                ])];
-                await window.api.db.saveCharacter({
-                  ...targetChar,
-                  appearances: mergedAppearances,
-                });
-                console.log('[Cleanup] Deleting merged character:', char.name);
+          console.log('[Cleanup] Found', charsToMerge.length, 'characters to merge into:', targetNameNorm);
+          
+          if (charsToMerge.length > 0) {
+            // Keep the first one with the target name, delete the rest
+            const keepChar = charsToMerge.find(c => c.name.toUpperCase().trim() === targetNameNorm) || charsToMerge[0];
+            
+            // Merge all appearances into the keeper
+            let mergedAppearances = [...(keepChar.appearances || [])];
+            
+            for (const char of charsToMerge) {
+              if (char.id !== keepChar.id) {
+                // Merge appearances
+                mergedAppearances = [...new Set([...mergedAppearances, ...(char.appearances || [])])];
+                
+                console.log('[Cleanup] Deleting duplicate character:', char.name, 'ID:', char.id);
                 await window.api.db.deleteCharacter(char.id);
                 mergedCount++;
+                
+                // Remove from currentCharacters to prevent re-processing
+                const idx = currentCharacters.findIndex(ch => ch.id === char.id);
+                if (idx !== -1) {
+                  currentCharacters.splice(idx, 1);
+                }
               }
             }
+            
+            // Update the keeper with merged appearances
+            await window.api.db.saveCharacter({
+              ...keepChar,
+              appearances: mergedAppearances,
+            });
+            console.log('[Cleanup] Kept character:', keepChar.name, 'with', mergedAppearances.length, 'appearances');
           }
         } else if (suggestion.type === 'add') {
           // Add new character detected by AI
@@ -328,27 +341,33 @@ export default function Editor() {
             }
           }
         } else if (suggestion.type === 'merge' && suggestion.targetName) {
-          // Merge duplicate scenes - keep the first one, delete the rest
-          const targetMatch = suggestion.targetName.match(/Scene (\d+):/);
-          if (targetMatch) {
-            const targetNum = parseInt(targetMatch[1], 10);
-            const targetScene = currentScenes.find(s => s.number === targetNum);
+          // Merge duplicate scenes - find by heading, keep one, delete rest
+          // Extract heading from targetName (format: "Scene X: HEADING")
+          const headingMatch = suggestion.targetName.match(/Scene \d+: (.+)/);
+          const targetHeading = headingMatch ? headingMatch[1].trim().toUpperCase() : null;
+          
+          if (targetHeading) {
+            // Find ALL scenes with this heading (duplicates)
+            const scenesWithHeading = currentScenes.filter(s => 
+              s.heading.toUpperCase().trim() === targetHeading
+            );
             
-            if (targetScene) {
-              console.log('[Cleanup] Merging scenes into:', targetScene.heading);
+            console.log('[Cleanup] Found', scenesWithHeading.length, 'scenes with heading:', targetHeading);
+            
+            if (scenesWithHeading.length > 1) {
+              // Keep the first one, delete the rest
+              const [keepScene, ...duplicatesToDelete] = scenesWithHeading;
+              console.log('[Cleanup] Keeping scene ID:', keepScene.id);
               
-              for (const sceneLabel of suggestion.items) {
-                const match = sceneLabel.match(/Scene (\d+):/);
-                if (match) {
-                  const sceneNum = parseInt(match[1], 10);
-                  if (sceneNum !== targetNum) {
-                    const scene = currentScenes.find(s => s.number === sceneNum);
-                    if (scene) {
-                      console.log('[Cleanup] Deleting duplicate scene:', scene.number);
-                      await window.api.db.deleteScene(scene.id);
-                      mergedCount++;
-                    }
-                  }
+              for (const dupScene of duplicatesToDelete) {
+                console.log('[Cleanup] Deleting duplicate scene ID:', dupScene.id, 'number:', dupScene.number);
+                await window.api.db.deleteScene(dupScene.id);
+                mergedCount++;
+                
+                // Remove from currentScenes to prevent re-processing
+                const idx = currentScenes.findIndex(s => s.id === dupScene.id);
+                if (idx !== -1) {
+                  currentScenes.splice(idx, 1);
                 }
               }
             }
