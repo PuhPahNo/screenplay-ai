@@ -119,13 +119,14 @@ export class AIClient {
           type: 'function',
           function: {
             name: 'add_scene',
-            description: 'Add a new scene to the screenplay. YOU MUST USE THIS TOOL when the user asks to add or create a scene.',
+            description: 'Add a new scene to the screenplay. Include the line_number where the scene heading appears in the screenplay text.',
             parameters: {
               type: 'object',
               properties: {
                 heading: { type: 'string', description: 'Scene heading (e.g. INT. OFFICE - DAY)' },
                 summary: { type: 'string', description: 'Brief summary of the scene' },
-                characters: { type: 'array', items: { type: 'string' }, description: 'List of character names in the scene' }
+                characters: { type: 'array', items: { type: 'string' }, description: 'List of character names in the scene' },
+                line_number: { type: 'number', description: 'The line number in the screenplay where this scene heading appears (for anchoring/navigation)' }
               },
               required: ['heading']
             }
@@ -669,13 +670,13 @@ export class AIClient {
             timeOfDay: '',
             summary: args.summary || '',
             characters: args.characters || [],
-            startLine: 0,
-            endLine: 0,
+            startLine: args.line_number || 0,  // Store the line number for anchoring
+            endLine: args.line_number || 0,
             content: '',
           };
           await this.dbManager.saveScene(newScene);
           this.systemActions?.notifyUpdate();
-          return `✓ Created Scene ${newScene.number}: ${newScene.heading}`;
+          return `✓ Created Scene ${newScene.number}: ${newScene.heading} (line ${newScene.startLine})`;
         }
 
         case 'link_character_to_scene': {
@@ -1425,13 +1426,18 @@ Example from this screenplay - the first lines might be:
 
 YOU MUST CALL set_screenplay_metadata with title and author NOW before proceeding!
 
-**STEP 1 - Create ALL Scenes:**
+**STEP 1 - Create ALL Scenes (with line numbers):**
 Find EVERY scene heading in the screenplay. Scene headings are:
 - Lines starting with INT. or EXT. or INT./EXT. or I/E. or EST.
 - Lines starting with ! followed by INT. or EXT. (forced scene headings in Fountain)
 - Lines starting with . followed by text (forced scene headings)
 
-For EACH scene heading found, call add_scene with the FULL heading text.
+For EACH scene heading found, call add_scene with:
+- heading: The FULL scene heading text
+- line_number: The approximate line number where this scene appears (count from the start of the screenplay)
+- summary: Brief description of what happens
+
+IMPORTANT: Include line_number so scenes can be anchored to the correct position in the screenplay!
 
 **STEP 2 - Create ONLY Speaking Characters:**
 A CHARACTER is ONLY someone who SPEAKS dialogue. In screenplay format:
