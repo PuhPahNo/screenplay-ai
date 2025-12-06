@@ -103,13 +103,73 @@ export function CleanupReviewModal({
       // Now compare LLM results with what's in the database
       const allSuggestions: CleanupSuggestion[] = [];
       
+      // 0. First, find DUPLICATE entries in the database itself
+      const seenCharNames = new Map<string, string[]>(); // normalized name -> [original names]
+      for (const dbChar of characters) {
+        const normalized = dbChar.name.toUpperCase().trim();
+        if (!seenCharNames.has(normalized)) {
+          seenCharNames.set(normalized, []);
+        }
+        seenCharNames.get(normalized)!.push(dbChar.name);
+      }
+      
+      // Flag duplicate characters in DB
+      for (const [, names] of seenCharNames) {
+        if (names.length > 1) {
+          allSuggestions.push({
+            type: 'merge',
+            category: 'character',
+            items: names,
+            targetName: names[0],
+            reason: `Found ${names.length} duplicate entries in database`,
+          });
+        }
+      }
+      
+      // Find duplicate scenes in DB
+      const seenSceneHeadings = new Map<string, string[]>();
+      for (const dbScene of scenes) {
+        const normalized = dbScene.heading.toUpperCase().trim();
+        if (!seenSceneHeadings.has(normalized)) {
+          seenSceneHeadings.set(normalized, []);
+        }
+        seenSceneHeadings.get(normalized)!.push(`Scene ${dbScene.number}: ${dbScene.heading}`);
+      }
+      
+      for (const [, sceneLabels] of seenSceneHeadings) {
+        if (sceneLabels.length > 1) {
+          allSuggestions.push({
+            type: 'merge',
+            category: 'scene',
+            items: sceneLabels,
+            targetName: sceneLabels[0],
+            reason: `Found ${sceneLabels.length} duplicate scene entries in database`,
+          });
+        }
+      }
+      
       // 1. Find characters in DB that LLM didn't find (orphaned)
       const llmCharNames = new Set(analysis.characters.map(c => c.normalizedName.toUpperCase()));
       const llmAliases = new Set<string>();
       analysis.characters.forEach(c => c.aliases.forEach(a => llmAliases.add(a.toUpperCase())));
       
+      // Also check if character name looks like a scene heading (misclassified)
+      const sceneHeadingPattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
+      
       for (const dbChar of characters) {
         const nameUpper = dbChar.name.toUpperCase().trim();
+        
+        // Check if this "character" is actually a scene heading
+        if (sceneHeadingPattern.test(nameUpper)) {
+          allSuggestions.push({
+            type: 'delete',
+            category: 'character',
+            items: [dbChar.name],
+            reason: 'This looks like a scene heading, not a character name',
+          });
+          continue;
+        }
+        
         if (!llmCharNames.has(nameUpper) && !llmAliases.has(nameUpper)) {
           allSuggestions.push({
             type: 'delete',

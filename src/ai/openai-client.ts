@@ -36,11 +36,11 @@ export class AIClient {
           type: 'function',
           function: {
             name: 'create_character',
-            description: 'Create a new character in the database. YOU MUST USE THIS TOOL when the user asks to create a character. Do not just describe the character.',
+            description: 'Create a new CHARACTER in the database. ONLY use for actual speaking characters with names like JOHN, SARAH, DR. SMITH. Do NOT use for scene headings (INT./EXT.), transitions (CUT TO), or action descriptions.',
             parameters: {
               type: 'object',
               properties: {
-                name: { type: 'string', description: 'Name of the character (e.g. JOHN DOE)' },
+                name: { type: 'string', description: 'Character name in UPPERCASE (e.g. JOHN, SARAH). NOT scene headings like INT. or EXT.' },
                 description: { type: 'string', description: 'Brief description of the character' },
                 age: { type: 'string', description: 'Age of the character' },
                 occupation: { type: 'string', description: 'Occupation of the character' },
@@ -48,7 +48,7 @@ export class AIClient {
                 goals: { type: 'string', description: 'Character goals' },
                 role: { type: 'string', description: 'Role in the story (Protagonist, Antagonist, etc.)' }
               },
-              required: ['name', 'description']
+              required: ['name']
             }
           }
         },
@@ -322,24 +322,42 @@ export class AIClient {
           try {
             switch (toolCall.function.name) {
               case 'create_character':
+                const charName = args.name.toUpperCase().trim();
+                
+                // Check if this looks like a scene heading (not a character)
+                const sceneHeadingPattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.|EST\.)/i;
+                if (sceneHeadingPattern.test(charName)) {
+                  result = `Skipped: "${charName}" looks like a scene heading, not a character`;
+                  break;
+                }
+                
+                // Check for duplicates before creating
+                const existingChars = await this.dbManager.getCharacters();
+                const duplicateChar = existingChars.find(c => 
+                  c.name.toUpperCase().trim() === charName
+                );
+                
+                if (duplicateChar) {
+                  result = `Character "${charName}" already exists - skipping duplicate`;
+                  break;
+                }
+                
                 const newCharacter = {
                   id: uuidv4(),
-                  name: args.name.toUpperCase(),
-                  description: args.description,
-                  age: args.age || 'Unknown',
-                  occupation: args.occupation || 'Unknown',
+                  name: charName,
+                  description: args.description || '',
+                  age: args.age || '',
+                  occupation: args.occupation || '',
                   personality: args.personality || '',
                   goals: args.goals || '',
                   arc: '',
                   relationships: {},
                   appearances: [],
-                  notes: `Created by AI. Role: ${args.role || 'Supporting'}`,
+                  notes: args.role ? `Role: ${args.role}` : '',
                 };
                 await this.dbManager.saveCharacter(newCharacter);
                 result = `Successfully created character: ${newCharacter.name}`;
                 this.systemActions?.notifyUpdate();
-                break;
-
                 break;
 
               case 'edit_character':
@@ -402,10 +420,26 @@ export class AIClient {
                 break;
 
               case 'add_scene':
+                const sceneHeading = args.heading.toUpperCase().trim();
+                
+                // Check for duplicate scenes before creating
+                const existingScenes = await this.dbManager.getScenes();
+                const duplicateScene = existingScenes.find(s => 
+                  s.heading.toUpperCase().trim() === sceneHeading
+                );
+                
+                if (duplicateScene) {
+                  result = `Scene "${sceneHeading}" already exists - skipping duplicate`;
+                  break;
+                }
+                
+                // Assign next scene number
+                const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
+                
                 const newScene = {
                   id: uuidv4(),
-                  number: 0, // Will be reordered
-                  heading: args.heading.toUpperCase(),
+                  number: maxSceneNum + 1,
+                  heading: sceneHeading,
                   location: '',
                   timeOfDay: '',
                   summary: args.summary || '',
@@ -415,7 +449,7 @@ export class AIClient {
                   content: '',
                 };
                 await this.dbManager.saveScene(newScene);
-                result = `Successfully added scene: ${newScene.heading}`;
+                result = `Successfully added scene ${newScene.number}: ${newScene.heading}`;
                 this.systemActions?.notifyUpdate();
                 break;
 

@@ -327,6 +327,32 @@ export default function Editor() {
               }
             }
           }
+        } else if (suggestion.type === 'merge' && suggestion.targetName) {
+          // Merge duplicate scenes - keep the first one, delete the rest
+          const targetMatch = suggestion.targetName.match(/Scene (\d+):/);
+          if (targetMatch) {
+            const targetNum = parseInt(targetMatch[1], 10);
+            const targetScene = currentScenes.find(s => s.number === targetNum);
+            
+            if (targetScene) {
+              console.log('[Cleanup] Merging scenes into:', targetScene.heading);
+              
+              for (const sceneLabel of suggestion.items) {
+                const match = sceneLabel.match(/Scene (\d+):/);
+                if (match) {
+                  const sceneNum = parseInt(match[1], 10);
+                  if (sceneNum !== targetNum) {
+                    const scene = currentScenes.find(s => s.number === sceneNum);
+                    if (scene) {
+                      console.log('[Cleanup] Deleting duplicate scene:', scene.number);
+                      await window.api.db.deleteScene(scene.id);
+                      mergedCount++;
+                    }
+                  }
+                }
+              }
+            }
+          }
         } else if (suggestion.type === 'add') {
           // Add new scene detected by AI
           for (const sceneHeading of suggestion.items) {
