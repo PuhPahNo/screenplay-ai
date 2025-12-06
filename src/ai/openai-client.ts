@@ -404,8 +404,8 @@ export class AIClient {
         messages,
         // Only include tools in agent mode
         ...(isAgentMode && {
-        tools,
-        tool_choice: 'auto',
+          tools,
+          tool_choice: 'auto',
           parallel_tool_calls: true,
         }),
         max_completion_tokens: 4000,
@@ -584,21 +584,21 @@ export class AIClient {
             return `Character "${charName}" already exists - skipping duplicate`;
           }
 
-                const newCharacter = {
-                  id: uuidv4(),
+          const newCharacter = {
+            id: uuidv4(),
             name: charName,
             description: args.description || '',
             age: args.age || '',
             occupation: args.occupation || '',
-                  personality: args.personality || '',
-                  goals: args.goals || '',
-                  arc: '',
-                  relationships: {},
-                  appearances: [],
+            personality: args.personality || '',
+            goals: args.goals || '',
+            arc: '',
+            relationships: {},
+            appearances: [],
             notes: args.role ? `Role: ${args.role}` : '',
-                };
-                await this.dbManager.saveCharacter(newCharacter);
-                this.systemActions?.notifyUpdate();
+          };
+          await this.dbManager.saveCharacter(newCharacter);
+          this.systemActions?.notifyUpdate();
           return `✓ Created character: ${newCharacter.name}`;
         }
 
@@ -637,20 +637,20 @@ export class AIClient {
 
           const maxSceneNum = existingScenes.reduce((max, s) => Math.max(max, s.number || 0), 0);
 
-                const newScene = {
-                  id: uuidv4(),
+          const newScene = {
+            id: uuidv4(),
             number: maxSceneNum + 1,
             heading: sceneHeading,
-                  location: '',
-                  timeOfDay: '',
-                  summary: args.summary || '',
-                  characters: args.characters || [],
-                  startLine: 0,
-                  endLine: 0,
-                  content: '',
-                };
-                await this.dbManager.saveScene(newScene);
-                this.systemActions?.notifyUpdate();
+            location: '',
+            timeOfDay: '',
+            summary: args.summary || '',
+            characters: args.characters || [],
+            startLine: 0,
+            endLine: 0,
+            content: '',
+          };
+          await this.dbManager.saveScene(newScene);
+          this.systemActions?.notifyUpdate();
           return `✓ Created Scene ${newScene.number}: ${newScene.heading}`;
         }
 
@@ -692,7 +692,7 @@ export class AIClient {
           };
           await this.dbManager.saveScene(updatedSceneForLink);
 
-                this.systemActions?.notifyUpdate();
+          this.systemActions?.notifyUpdate();
           return `✓ Linked ${charToLink.name} to Scene ${linkSceneNum}`;
         }
 
@@ -936,8 +936,108 @@ export class AIClient {
           return `✓ Renumbered ${sortedScenes.length} scenes (1 to ${sortedScenes.length})`;
         }
 
+        // === BATCH OPERATIONS ===
+        case 'delete_characters_batch': {
+          const allCharsForBatch = await this.dbManager.getCharacters();
+          const deleted: string[] = [];
+          const notFound: string[] = [];
+
+          for (const name of args.character_names) {
+            const match = allCharsForBatch.find(c =>
+              c.name.toLowerCase() === name.toLowerCase()
+            );
+            if (match) {
+              await this.dbManager.deleteCharacter(match.id);
+              deleted.push(match.name);
+            } else {
+              notFound.push(name);
+            }
+          }
+
+          this.systemActions?.notifyUpdate();
+          
+          let result = `**Batch Delete Results:**\n`;
+          if (deleted.length > 0) {
+            result += `✓ Deleted (${deleted.length}): ${deleted.join(', ')}\n`;
+          }
+          if (notFound.length > 0) {
+            result += `✗ Not Found (${notFound.length}): ${notFound.join(', ')}`;
+          }
+          return result;
+        }
+
+        // === SYSTEM ACTIONS ===
+        case 'save_screenplay': {
+          if (this.systemActions) {
+            await this.systemActions.saveScreenplay();
+            return '✓ Screenplay saved successfully.';
+          }
+          return '✗ Save functionality not available.';
+        }
+
+        case 'export_screenplay': {
+          if (this.systemActions) {
+            await this.systemActions.exportScreenplay(args.format);
+            return `✓ Screenplay exported to ${args.format} successfully.`;
+          }
+          return '✗ Export functionality not available.';
+        }
+
+        case 'update_content': {
+          if (this.systemActions && this.systemActions.previewUpdate) {
+            this.systemActions.previewUpdate({
+              original: args.original_text,
+              modified: args.new_text,
+              description: args.description
+            });
+            return `I have proposed a change: "${args.description}". Please review it in the editor and click Accept or Reject.`;
+          }
+          return '✗ Content update functionality not available.';
+        }
+
+        // === QUERY TOOLS ===
+        case 'get_character_scenes': {
+          const charScenesData = await this.dbManager.getScenes();
+          const searchName = args.character_name.toUpperCase();
+          const charAppearances = charScenesData.filter(s =>
+            s.characters.some(c => c.toUpperCase() === searchName) ||
+            (s.content && s.content.toUpperCase().includes(searchName))
+          );
+
+          if (charAppearances.length > 0) {
+            let result = `${searchName} appears in ${charAppearances.length} scene(s):\n\n`;
+            for (const scene of charAppearances) {
+              result += `=== Scene ${scene.number}: ${scene.heading} ===\n`;
+              result += (scene.content || '[No content]').substring(0, 500);
+              if (scene.content && scene.content.length > 500) result += '...\n';
+              result += '\n\n';
+            }
+            return result;
+          }
+          return `${searchName} not found in any scenes.`;
+        }
+
+        case 'get_screenplay_section': {
+          const sectionScenes = await this.dbManager.getScenes();
+          const startNum = args.start_scene;
+          const endNum = args.end_scene;
+          const section = sectionScenes.filter(s => s.number >= startNum && s.number <= endNum);
+
+          if (section.length > 0) {
+            let result = `=== SCENES ${startNum} to ${endNum} ===\n\n`;
+            for (const scene of section) {
+              result += `--- Scene ${scene.number}: ${scene.heading} ---\n`;
+              result += scene.content || '[No content]';
+              result += '\n\n';
+            }
+            return result;
+          }
+          return `No scenes found in range ${startNum}-${endNum}. Total scenes: ${sectionScenes.length}`;
+        }
+
         default:
-          return `Tool ${toolName} executed.`;
+          console.warn(`[AI] Unknown tool called: ${toolName}`);
+          return `Tool ${toolName} not implemented.`;
       }
     } catch (error) {
       console.error(`[AI] Error executing tool ${toolName}:`, error);
