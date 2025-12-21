@@ -1,45 +1,36 @@
+import { useState } from 'react';
 import { useAppStore } from '../store/app-store';
-import { BarChart3, X } from 'lucide-react';
+import { BarChart3, X, Loader2 } from 'lucide-react';
 
 export default function AnalyzePromptModal() {
-  const { showAnalyzePrompt, setShowAnalyzePrompt, screenplayContent } = useAppStore();
+  const { showAnalyzePrompt, setShowAnalyzePrompt, screenplayContent, loadCharacters, loadScenes } = useAppStore();
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [progress, setProgress] = useState('');
   
   if (!showAnalyzePrompt) return null;
   
   const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    setProgress('Starting AI analysis...');
+    
     try {
-      const parsed = await window.api.parse.fountain(screenplayContent);
+      // Use the centralized LLM analysis that includes character enrichment
+      setProgress('Analyzing screenplay with AI...');
+      const analysis = await window.api.ai.analyzeScreenplay(screenplayContent);
       
-      for (const scene of parsed.scenes) {
-        await window.api.db.saveScene(scene);
-      }
-      
-      for (const scene of parsed.scenes) {
-        for (const charName of scene.characters) {
-          const existing = useAppStore.getState().characters.find(c =>
-            c.id === charName || c.name.toUpperCase() === charName.toUpperCase()
-          );
-          
-          if (!existing) {
-            await window.api.db.saveCharacter({
-              id: charName,
-              name: charName,
-              description: '',
-              arc: '',
-              relationships: {},
-              appearances: [scene.id],
-            });
-          }
-        }
-      }
-      
-      await useAppStore.getState().loadCharacters();
-      await useAppStore.getState().loadScenes();
+      // Reload data from database (analysis already saved items with enrichment)
+      setProgress('Loading updated data...');
+      await loadCharacters();
+      await loadScenes();
       
       setShowAnalyzePrompt(false);
-      alert(`Analysis complete! Found ${parsed.scenes.length} scenes.`);
+      alert(`Analysis complete! Found ${analysis.scenes.length} scenes and ${analysis.characters.length} characters with enriched profiles.`);
     } catch (error) {
+      console.error('[AnalyzePromptModal] Analysis failed:', error);
       alert('Failed to analyze: ' + error);
+    } finally {
+      setIsAnalyzing(false);
+      setProgress('');
     }
   };
   
@@ -54,6 +45,7 @@ export default function AnalyzePromptModal() {
           <button
             onClick={() => setShowAnalyzePrompt(false)}
             className="text-gray-400 hover:text-gray-600"
+            disabled={isAnalyzing}
           >
             <X className="w-5 h-5" />
           </button>
@@ -64,22 +56,37 @@ export default function AnalyzePromptModal() {
           Would you like to analyze it now to automatically extract characters and scenes?
         </p>
         
+        {isAnalyzing && progress && (
+          <div className="flex items-center gap-2 mb-4 text-sm text-purple-600">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>{progress}</span>
+          </div>
+        )}
+        
         <div className="flex gap-3">
           <button
             onClick={() => setShowAnalyzePrompt(false)}
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg transition-colors"
+            className="flex-1 px-4 py-2 border border-gray-300 dark:border-dark-border rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg transition-colors disabled:opacity-50"
+            disabled={isAnalyzing}
           >
             Skip
           </button>
           <button
             onClick={handleAnalyze}
-            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            disabled={isAnalyzing}
           >
-            Analyze Now
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              'Analyze Now'
+            )}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

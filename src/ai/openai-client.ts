@@ -1,8 +1,15 @@
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
-import type { AIContext, Storyline, SystemActions, TokenUsage } from '../shared/types';
+import type { AIContext, Storyline, SystemActions, TokenUsage, Character } from '../shared/types';
 import type { DatabaseManager } from '../database/db-manager';
 import { ContextBuilder } from './context-builder';
+import {
+  extractCharacterEvidence,
+  formatAllEvidenceForPrompt,
+  parseEnrichmentResponse,
+  applyEnrichments,
+} from './character-enrichment';
+import { FountainParserAdapter } from '../renderer/fountain/parser';
 
 export interface ChatResponse {
   content: string;
@@ -2012,6 +2019,11 @@ Start analyzing the screenplay now and call the tools for EVERY scene and charac
 
       console.log(`[AI] Analysis complete: ${createdScenes.length} scenes, ${createdCharacters.length} characters in database`);
 
+      // =====================================================================
+      // PHASE 2: Character Enrichment (fill-only-missing)
+      // =====================================================================
+      await this.enrichCharacterProfiles(content, allCharacters);
+
       return {
         scenes: createdScenes,
         characters: createdCharacters,
@@ -2021,6 +2033,119 @@ Start analyzing the screenplay now and call the tools for EVERY scene and charac
     } catch (error) {
       console.error('[AI] Analysis failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Enrich character profiles using LLM-generated JSON.
+   * Fills only empty fields; never overwrites user-entered data.
+   */
+  private async enrichCharacterProfiles(content: string, characters: Character[]): Promise<void> {
+    if (characters.length === 0) {
+      console.log('[AI-ENRICH] No characters to enrich');
+      return;
+    }
+
+    console.log(`[AI-ENRICH] Starting character enrichment for ${characters.length} characters...`);
+
+    try {
+      // 1. Parse screenplay into tokens and extract evidence
+      const parsed = FountainParserAdapter.parse(content);
+      const characterNames = new Set(characters.map(c => c.name.toUpperCase()));
+      const evidenceMap = extractCharacterEvidence(parsed.tokens, characterNames);
+
+      // 2. Format evidence for prompt (bounded)
+      const evidencePrompt = formatAllEvidenceForPrompt(evidenceMap, 20);
+
+      // 3. Build character list for the LLM
+      const characterList = characters.map(c => c.name).join(', ');
+
+      // 4. Call LLM for JSON enrichment
+      const enrichmentPrompt = `You are a screenplay analyst. Based on the evidence below, generate detailed character profiles.
+
+**Characters to analyze:** ${characterList}
+
+**Evidence from screenplay:**
+
+${evidencePrompt}
+
+---
+
+Generate a JSON object with this exact structure:
+{
+  "characters": [
+    {
+      "name": "CHARACTER_NAME",
+      "description": "Brief description of who they are",
+      "age": "Estimated age or age range",
+      "occupation": "Their job or role in life",
+      "physicalAppearance": "Physical description if apparent",
+      "personality": "Key personality traits based on their dialogue and actions",
+      "goals": "What they want or are trying to achieve",
+      "fears": "What they fear or avoid",
+      "backstory": "Any background information inferred from the screenplay",
+      "arc": "Their character development or journey",
+      "notes": "Any other relevant observations",
+      "relationships": {
+        "OTHER_CHARACTER_NAME": "Description of their relationship"
+      }
+    }
+  ]
+}
+
+Rules:
+- Only include characters from the provided list
+- Base all information on the evidence provided
+- Leave fields empty ("") if there's insufficient evidence
+- For relationships, only include characters that appear together
+- Keep descriptions concise but insightful
+- Use character names in UPPERCASE`;
+
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a screenplay analyst that outputs valid JSON only. No markdown, no explanations, just the JSON object.',
+          },
+          {
+            role: 'user',
+            content: enrichmentPrompt,
+          },
+        ],
+        temperature: 0.3,
+        max_completion_tokens: 4000,
+        response_format: { type: 'json_object' },
+      });
+
+      const jsonResponse = completion.choices[0]?.message?.content || '{}';
+      console.log('[AI-ENRICH] Received JSON response, length:', jsonResponse.length);
+
+      // 5. Parse and validate response
+      const enrichments = parseEnrichmentResponse(jsonResponse);
+      console.log(`[AI-ENRICH] Parsed ${enrichments.length} enrichment profiles`);
+
+      if (enrichments.length === 0) {
+        console.log('[AI-ENRICH] No valid enrichments parsed, skipping');
+        return;
+      }
+
+      // 6. Apply fill-only-missing merge
+      const updatedCharacters = applyEnrichments(characters, enrichments);
+      console.log(`[AI-ENRICH] ${updatedCharacters.length} characters have new data to save`);
+
+      // 7. Persist updates
+      for (const char of updatedCharacters) {
+        await this.dbManager.saveCharacter(char);
+        console.log(`[AI-ENRICH] Updated character: ${char.name}`);
+      }
+
+      this.systemActions?.notifyUpdate();
+      console.log('[AI-ENRICH] Character enrichment complete');
+
+    } catch (error) {
+      console.error('[AI-ENRICH] Character enrichment failed:', error);
+      // Don't throw - enrichment failure shouldn't fail the whole analysis
     }
   }
 

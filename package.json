@@ -1,6 +1,6 @@
 {
   "name": "screenplay-ai",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "AI-powered screenplay writing desktop application",
   "private": true,
   "author": "Screenplay AI",
@@ -18,6 +18,8 @@
     "release": "vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -68,6 +70,7 @@
     "vite": "^5.0.8",
     "vite-plugin-electron": "^0.28.0",
     "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^2.1.9",
     "wait-on": "^7.2.0"
   },
   "build": {
