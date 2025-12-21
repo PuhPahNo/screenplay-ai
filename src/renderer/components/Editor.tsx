@@ -669,7 +669,7 @@ export default function Editor() {
               className="flex-shrink-0 border-r border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface overflow-y-auto shadow-sm"
               style={{ width: leftPanelWidth }}
             >
-              {activePanel === 'characters' && <CharacterPanel />}
+              {activePanel === 'characters' && <CharacterPanel onSceneClick={handleSceneClick} />}
               {activePanel === 'scenes' && <ScenePanel onSceneClick={handleSceneClick} />}
               {activePanel === 'storyline' && <StorylinePanel />}
             </div>

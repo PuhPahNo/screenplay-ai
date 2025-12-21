@@ -1,23 +1,28 @@
-import { useState, memo, useCallback } from 'react';
-import { X, Save, Plus, Trash2, User } from 'lucide-react';
+import { useMemo, useState, memo, useCallback } from 'react';
+import { X, Save, Plus, Trash2, User, Film } from 'lucide-react';
 import type { Character } from '../../shared/types';
+import { useAppStore } from '../store/app-store';
+import { getScenesForCharacter } from '../utils/character-scenes';
 
 interface CharacterEditorProps {
   character: Character | null;
   allCharacters: Character[];
   onSave: (character: Character) => void;
+  onSceneClick?: (sceneStartLineIndex: number) => void;
   onClose: () => void;
 }
 
-type TabType = 'overview' | 'details' | 'relationships' | 'custom';
+type TabType = 'overview' | 'details' | 'relationships' | 'scenes' | 'custom';
 
 function CharacterEditor({
   character,
   allCharacters,
   onSave,
+  onSceneClick,
   onClose,
 }: CharacterEditorProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const { parsedScenes } = useAppStore();
   
   // Initialize edited character only once, not on every render
   const [editedCharacter, setEditedCharacter] = useState<Character>(() => 
@@ -79,10 +84,15 @@ function CharacterEditor({
     }));
   }, []);
 
+  const scenesForCharacter = useMemo(() => {
+    return getScenesForCharacter(parsedScenes, editedCharacter.name);
+  }, [parsedScenes, editedCharacter.name]);
+
   const tabs: Array<{ id: TabType; label: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'details', label: 'Details' },
     { id: 'relationships', label: 'Relationships' },
+    { id: 'scenes', label: 'Scenes' },
     { id: 'custom', label: 'Custom' },
   ];
 
@@ -307,6 +317,65 @@ function CharacterEditor({
               {allCharacters.filter((c) => c.id !== editedCharacter.id).length === 0 && (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
                   No other characters yet. Create more characters to define relationships.
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'scenes' && (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    Scenes featuring {editedCharacter.name || 'this character'}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Derived from the screenplay text. Click a scene to jump to its heading.
+                  </p>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                  {scenesForCharacter.length} scene{scenesForCharacter.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              {scenesForCharacter.length === 0 ? (
+                <div className="p-4 rounded-lg border border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-bg">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    No scenes found for this character in the screenplay text yet.
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                    Tip: character matching is based on dialogue cue names (usually UPPERCASE).
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-dark-border border border-gray-200 dark:border-dark-border rounded-lg overflow-hidden">
+                  {scenesForCharacter.map((scene) => (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      onClick={() => onSceneClick?.(scene.startLineIndex)}
+                      className="w-full text-left p-4 bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-dark-bg transition-colors flex items-start gap-3"
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                        <Film className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                            {scene.number}. {scene.heading}
+                          </p>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                            line {scene.startLineIndex}
+                          </span>
+                        </div>
+                        {scene.timeOfDay && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                            {scene.timeOfDay}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useAppStore } from '../store/app-store';
-import { Film, Plus, ChevronRight } from 'lucide-react';
+import { Film, Plus, ChevronRight, Search } from 'lucide-react';
 import type { IndexedScene } from '../../screenplay/scene-indexer';
 
 interface ScenePanelProps {
@@ -30,7 +30,7 @@ function SceneCard({
 
   return (
     <div
-      onClick={onClick}
+        onClick={onClick}
       className={`group relative bg-white dark:bg-dark-surface border rounded-lg p-3 transition-all duration-200 hover:shadow-md cursor-pointer ${
         isSelected 
           ? 'border-primary-500 dark:border-primary-400 shadow-md ring-2 ring-primary-200 dark:ring-primary-800' 
@@ -95,6 +95,19 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newSceneHeading, setNewSceneHeading] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredScenes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return parsedScenes;
+    return parsedScenes.filter((scene) => {
+      if (scene.heading.toLowerCase().includes(q)) return true;
+      if (scene.location?.toLowerCase().includes(q)) return true;
+      if (scene.timeOfDay?.toLowerCase().includes(q)) return true;
+      if (scene.characters.some((c) => c.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [parsedScenes, searchQuery]);
 
   const handleSceneClick = useCallback((scene: IndexedScene) => {
     setSelectedSceneId(scene.id);
@@ -123,7 +136,7 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
       
       setScreenplayContent(newContent);
       await saveScreenplay();
-      
+
       // The store will automatically reindex scenes via setScreenplayContent
       // So parsedScenes will update with the new scene
       
@@ -178,7 +191,7 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
       <div className="p-4 border-b border-gray-200 dark:border-dark-border">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-            Scenes ({parsedScenes.length})
+            Scenes ({filteredScenes.length}{searchQuery.trim() ? `/${parsedScenes.length}` : ''})
           </h3>
           <button
             onClick={() => setIsCreating(true)}
@@ -192,6 +205,18 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           Click to navigate to scene
         </p>
+
+        {/* Search */}
+        <div className="relative mt-3">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search scenes..."
+            className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-dark-border rounded-lg bg-white dark:bg-dark-bg text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+        </div>
       </div>
 
       {/* New Scene Input */}
@@ -227,16 +252,16 @@ export default function ScenePanel({ onSceneClick }: ScenePanelProps) {
 
       {/* Scenes List - Simple list, no drag-and-drop since scene order is determined by screenplay text */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="space-y-3">
-          {parsedScenes.map((scene) => (
+            <div className="space-y-3">
+          {filteredScenes.map((scene) => (
             <SceneCard
-              key={scene.id}
-              scene={scene}
+                  key={scene.id}
+                  scene={scene}
               onClick={() => handleSceneClick(scene)}
               isSelected={selectedSceneId === scene.id}
-            />
-          ))}
-        </div>
+                />
+              ))}
+            </div>
       </div>
     </div>
   );

@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppStore } from '../store/app-store';
 import { Plus, Grid, List, Search, User } from 'lucide-react';
 import CharacterEditor from './CharacterEditor';
 import type { Character } from '../../shared/types';
+import { buildCharacterSceneCountMap } from '../utils/character-scenes';
 
 type ViewMode = 'grid' | 'list';
 
-export default function CharacterPanel() {
-  const { characters, saveCharacter } = useAppStore();
+interface CharacterPanelProps {
+  onSceneClick?: (sceneStartLineIndex: number) => void;
+}
+
+export default function CharacterPanel({ onSceneClick }: CharacterPanelProps) {
+  const { characters, saveCharacter, parsedScenes } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -39,6 +44,8 @@ export default function CharacterPanel() {
     char.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
     char.occupation?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const sceneCountByName = useMemo(() => buildCharacterSceneCountMap(parsedScenes), [parsedScenes]);
 
   return (
     <div className="h-full flex flex-col">
@@ -161,7 +168,7 @@ export default function CharacterPanel() {
                       </p>
                     )}
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-                      {character.appearances.length} scene{character.appearances.length !== 1 ? 's' : ''}
+                      {sceneCountByName.get(character.name.toUpperCase()) || 0} scene{(sceneCountByName.get(character.name.toUpperCase()) || 0) !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
@@ -202,7 +209,7 @@ export default function CharacterPanel() {
                     </p>
                   )}
                   <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-                    {character.appearances.length} scene{character.appearances.length !== 1 ? 's' : ''}
+                    {sceneCountByName.get(character.name.toUpperCase()) || 0} scene{(sceneCountByName.get(character.name.toUpperCase()) || 0) !== 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
@@ -217,6 +224,7 @@ export default function CharacterPanel() {
           character={selectedCharacter}
           allCharacters={characters}
           onSave={handleSave}
+          onSceneClick={onSceneClick}
           onClose={() => {
             setIsEditorOpen(false);
             setSelectedCharacter(null);
