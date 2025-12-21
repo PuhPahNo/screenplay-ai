@@ -215,12 +215,13 @@ export class AIClient {
           type: 'function',
           function: {
             name: 'read_scene',
-            description: 'Read the FULL content of a specific scene. Use this to analyze dialogue, action lines, or specific scene details. You can identify scenes from the scene list in the context.',
+            description: 'Read the FULL content of a specific scene. Use this to analyze dialogue, action lines, or specific scene details. You can find scenes by number, ID, or partial heading match.',
             parameters: {
               type: 'object',
               properties: {
                 scene_id: { type: 'string', description: 'The ID of the scene to read' },
-                scene_number: { type: 'number', description: 'Alternatively, the scene number (1, 2, 3, etc.)' }
+                scene_number: { type: 'number', description: 'The scene number (1, 2, 3, etc.)' },
+                scene_heading: { type: 'string', description: 'Partial scene heading to match (e.g., "STREETS OF MANHATTAN")' }
               },
               required: []
             }
@@ -924,20 +925,43 @@ export class AIClient {
             targetScene = scenes.find(s => s.id === args.scene_id);
           } else if (args.scene_number) {
             targetScene = scenes.find(s => s.number === args.scene_number);
+          } else if (args.scene_heading) {
+            // Also allow finding by heading
+            const headingUpper = args.scene_heading.toUpperCase().trim();
+            targetScene = scenes.find(s => s.heading.toUpperCase().includes(headingUpper));
           }
 
           if (targetScene) {
+            // Extract actual content from screenplay using line numbers
+            let sceneContent = targetScene.content || '';
+            
+            // If no cached content, extract from full screenplay
+            if (!sceneContent && context?.currentContent) {
+              const lines = context.currentContent.split('\n');
+              const startLine = targetScene.startLine || 0;
+              
+              // Find end line (next scene heading or end of file)
+              let endLine = lines.length;
+              const sortedScenes = scenes.sort((a, b) => (a.startLine || 0) - (b.startLine || 0));
+              const currentIdx = sortedScenes.findIndex(s => s.id === targetScene!.id);
+              if (currentIdx >= 0 && currentIdx < sortedScenes.length - 1) {
+                endLine = sortedScenes[currentIdx + 1].startLine || lines.length;
+              }
+              
+              sceneContent = lines.slice(startLine, endLine).join('\n');
+            }
+
             let result = `=== SCENE ${targetScene.number}: ${targetScene.heading} ===\n`;
             result += `Characters in scene: ${targetScene.characters.join(', ') || 'None listed'}\n`;
             if (targetScene.summary) {
               result += `Summary: ${targetScene.summary}\n`;
             }
             result += `\n--- FULL SCENE CONTENT ---\n`;
-            result += targetScene.content || '(No content available - scene may need re-parsing)';
+            result += sceneContent || '(No content available)';
             result += `\n--- END SCENE ---`;
             return result;
           }
-          return `Scene not found. Use list_all_scenes to see available scenes.`;
+          return `Scene not found. Use list_all_scenes to see available scenes, or use search_screenplay to find specific text.`;
         }
 
         case 'read_character': {
@@ -959,35 +983,48 @@ export class AIClient {
         }
 
         case 'search_screenplay': {
-          const allScenes = await this.dbManager.getScenes();
           const query = args.query.toLowerCase();
-          const matches: Array<{ scene: typeof allScenes[0]; excerpts: string[] }> = [];
+          const matches: Array<{ location: string; excerpts: string[] }> = [];
 
-          for (const scene of allScenes) {
-            if (scene.content && scene.content.toLowerCase().includes(query)) {
-              // Extract context around matches (show 150 chars before and after)
-              const content = scene.content;
-              const lowerContent = content.toLowerCase();
-              const excerpts: string[] = [];
-              let searchStart = 0;
+          // Search the actual screenplay content, not empty DB scenes
+          if (context?.currentContent) {
+            const content = context.currentContent;
+            const lowerContent = content.toLowerCase();
+            const lines = content.split('\n');
+            
+            // Find all occurrences with context
+            let searchStart = 0;
+            let matchCount = 0;
+            const maxMatches = 10;
 
-              while (searchStart < lowerContent.length) {
-                const idx = lowerContent.indexOf(query, searchStart);
-                if (idx === -1) break;
+            while (searchStart < lowerContent.length && matchCount < maxMatches) {
+              const idx = lowerContent.indexOf(query, searchStart);
+              if (idx === -1) break;
 
-                const start = Math.max(0, idx - 100);
-                const end = Math.min(content.length, idx + query.length + 100);
-                const excerpt = (start > 0 ? '...' : '') +
-                  content.substring(start, end) +
-                  (end < content.length ? '...' : '');
-                excerpts.push(excerpt);
-                searchStart = idx + query.length;
+              // Find which line this is on
+              const beforeMatch = content.substring(0, idx);
+              const lineNumber = beforeMatch.split('\n').length;
+              
+              // Get context around the match
+              const start = Math.max(0, idx - 150);
+              const end = Math.min(content.length, idx + query.length + 150);
+              const excerpt = (start > 0 ? '...' : '') +
+                content.substring(start, end) +
+                (end < content.length ? '...' : '');
 
-                // Limit to 3 excerpts per scene
-                if (excerpts.length >= 3) break;
+              // Find the scene this is in
+              let sceneName = 'Unknown location';
+              for (let i = lineNumber - 1; i >= 0; i--) {
+                const line = lines[i];
+                if (/^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.|EST\.)/i.test(line.trim())) {
+                  sceneName = line.trim();
+                  break;
+                }
               }
 
-              matches.push({ scene, excerpts });
+              matches.push({ location: `Line ${lineNumber} (${sceneName})`, excerpts: [excerpt] });
+              searchStart = idx + query.length;
+              matchCount++;
             }
           }
 
@@ -996,10 +1033,10 @@ export class AIClient {
           }
 
           let result = `=== SEARCH RESULTS FOR "${args.query}" ===\n`;
-          result += `Found in ${matches.length} scene(s):\n\n`;
+          result += `Found ${matches.length} match(es):\n\n`;
 
           for (const match of matches) {
-            result += `--- Scene ${match.scene.number}: ${match.scene.heading} ---\n`;
+            result += `--- ${match.location} ---\n`;
             for (const excerpt of match.excerpts) {
               result += `"${excerpt.trim()}"\n`;
             }
@@ -1040,7 +1077,7 @@ export class AIClient {
 
         case 'read_scene_with_context': {
           const allScenes = await this.dbManager.getScenes();
-          const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
+          const sortedScenes = allScenes.sort((a, b) => (a.startLine || 0) - (b.startLine || 0));
           const targetNum = args.scene_number;
           const contextCount = args.context_scenes || 1;
 
@@ -1054,11 +1091,22 @@ export class AIClient {
 
           let result = `=== SCENE ${targetNum} WITH CONTEXT ===\n\n`;
 
+          // Use actual screenplay content
+          const lines = context?.currentContent?.split('\n') || [];
+
           for (let i = startIdx; i <= endIdx; i++) {
             const scene = sortedScenes[i];
             const marker = i === targetIdx ? '>>> TARGET SCENE <<<' : '';
             result += `--- Scene ${scene.number}: ${scene.heading} ${marker}---\n`;
-            result += scene.content || '(No content)';
+            
+            // Extract content from screenplay using line numbers
+            const sceneStartLine = scene.startLine || 0;
+            const sceneEndLine = (i < sortedScenes.length - 1) 
+              ? (sortedScenes[i + 1].startLine || lines.length) 
+              : lines.length;
+            const sceneContent = lines.slice(sceneStartLine, sceneEndLine).join('\n');
+            
+            result += sceneContent || '(No content)';
             result += '\n\n';
           }
 
@@ -1067,67 +1115,73 @@ export class AIClient {
 
         case 'analyze_character_arc': {
           const charName = args.character_name.toUpperCase().trim();
-          const allScenes = await this.dbManager.getScenes();
-          const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
-
-          const appearances: Array<{ scene: typeof sortedScenes[0]; excerpt: string }> = [];
-
-          for (const scene of sortedScenes) {
-            if (!scene.content) continue;
-
-            // Check if character appears in this scene (as dialogue or mentioned)
-            const upperContent = scene.content.toUpperCase();
-            if (upperContent.includes(charName)) {
-              // Extract relevant lines mentioning this character
-              const lines = scene.content.split('\n');
-              const relevantLines: string[] = [];
-              let inDialogue = false;
-
-              for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                const upperLine = line.toUpperCase();
-
-                // Check if this is the character's cue
-                if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
-                  inDialogue = true;
-                  relevantLines.push(`[SPEAKS] ${line}`);
-                  // Get their dialogue (next non-empty lines until another cue)
-                  for (let j = i + 1; j < lines.length && j < i + 5; j++) {
-                    const nextLine = lines[j].trim();
-                    if (nextLine && !nextLine.match(/^[A-Z]{2,}(\s|$)/)) {
-                      relevantLines.push(`  "${nextLine}"`);
-                    } else if (nextLine.match(/^[A-Z]{2,}(\s|$)/)) {
-                      break;
-                    }
-                  }
-                } else if (upperLine.includes(charName) && !inDialogue) {
-                  relevantLines.push(`[ACTION] ${line}`);
-                }
-
-                if (line === '' || line.match(/^[A-Z]{2,}(\s|$)/)) {
-                  inDialogue = false;
+          
+          // Use actual screenplay content
+          if (!context?.currentContent) {
+            return `No screenplay content available to analyze.`;
+          }
+          
+          const fullContent = context.currentContent;
+          const allLines = fullContent.split('\n');
+          const appearances: Array<{ sceneHeading: string; excerpt: string }> = [];
+          
+          // Find all scenes and character mentions
+          let currentScene = 'Before first scene';
+          
+          for (let i = 0; i < allLines.length; i++) {
+            const line = allLines[i].trim();
+            const upperLine = line.toUpperCase();
+            
+            // Track current scene
+            if (/^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.|EST\.)/i.test(line)) {
+              currentScene = line;
+            }
+            
+            // Check if this is the character's cue
+            if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
+              const relevantLines: string[] = [`[SPEAKS] ${line}`];
+              
+              // Get their dialogue (next lines until another cue)
+              for (let j = i + 1; j < allLines.length && j < i + 6; j++) {
+                const nextLine = allLines[j].trim();
+                if (nextLine && !nextLine.match(/^[A-Z]{2,}[^a-z]*$/)) {
+                  relevantLines.push(`  "${nextLine}"`);
+                } else if (nextLine.match(/^[A-Z]{2,}[^a-z]*$/)) {
+                  break;
                 }
               }
-
-              if (relevantLines.length > 0) {
-                appearances.push({
-                  scene,
-                  excerpt: relevantLines.slice(0, 8).join('\n')
-                });
-              }
+              
+              appearances.push({
+                sceneHeading: currentScene,
+                excerpt: relevantLines.join('\n')
+              });
+            } else if (upperLine.includes(charName) && line.length > 10) {
+              // Action line mentioning character
+              appearances.push({
+                sceneHeading: currentScene,
+                excerpt: `[ACTION] ${line}`
+              });
             }
           }
 
           if (appearances.length === 0) {
-            return `Character "${charName}" not found in any scenes.`;
+            return `Character "${charName}" not found in the screenplay.`;
           }
 
           let result = `=== CHARACTER ARC: ${charName} ===\n`;
-          result += `Appears in ${appearances.length} scene(s)\n\n`;
+          result += `Found ${appearances.length} appearance(s)\n\n`;
 
+          // Group by scene and limit output
+          const byScene = new Map<string, string[]>();
           for (const app of appearances) {
-            result += `--- Scene ${app.scene.number}: ${app.scene.heading} ---\n`;
-            result += app.excerpt;
+            const existing = byScene.get(app.sceneHeading) || [];
+            existing.push(app.excerpt);
+            byScene.set(app.sceneHeading, existing);
+          }
+
+          for (const [scene, excerpts] of byScene) {
+            result += `--- ${scene} ---\n`;
+            result += excerpts.slice(0, 5).join('\n');
             result += '\n\n';
           }
 
@@ -1136,50 +1190,48 @@ export class AIClient {
 
         case 'find_character_dialogue': {
           const charName = args.character_name.toUpperCase().trim();
-          const allScenes = await this.dbManager.getScenes();
-          const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
+          
+          // Use actual screenplay content
+          if (!context?.currentContent) {
+            return `No screenplay content available.`;
+          }
+          
+          const allLines = context.currentContent.split('\n');
+          const dialogues: Array<{ sceneHeading: string; dialogue: string }> = [];
+          let currentScene = 'Before first scene';
 
-          const dialogues: Array<{ sceneNum: number; heading: string; dialogue: string[] }> = [];
-
-          for (const scene of sortedScenes) {
-            if (!scene.content) continue;
-
-            const lines = scene.content.split('\n');
-            const sceneDialogues: string[] = [];
-
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i].trim();
-              const upperLine = line.toUpperCase();
-
-              // Check if this is the character's cue
-              if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
-                // Collect their dialogue
-                let dialogue = '';
-                for (let j = i + 1; j < lines.length; j++) {
-                  const nextLine = lines[j].trim();
-                  if (!nextLine) continue;
-                  // Stop at next character cue or scene heading
-                  if (nextLine.match(/^[A-Z]{2,}[^a-z]*$/) && !nextLine.startsWith('(')) {
-                    break;
-                  }
-                  if (nextLine.startsWith('(') && nextLine.endsWith(')')) {
-                    dialogue += `${nextLine} `;
-                  } else {
-                    dialogue += nextLine + ' ';
-                  }
-                }
-                if (dialogue.trim()) {
-                  sceneDialogues.push(dialogue.trim());
-                }
-              }
+          for (let i = 0; i < allLines.length; i++) {
+            const line = allLines[i].trim();
+            const upperLine = line.toUpperCase();
+            
+            // Track current scene
+            if (/^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.|EST\.)/i.test(line)) {
+              currentScene = line;
             }
 
-            if (sceneDialogues.length > 0) {
-              dialogues.push({
-                sceneNum: scene.number,
-                heading: scene.heading,
-                dialogue: sceneDialogues
-              });
+            // Check if this is the character's cue
+            if (upperLine === charName || upperLine.startsWith(charName + ' (')) {
+              // Collect their dialogue
+              let dialogue = '';
+              for (let j = i + 1; j < allLines.length; j++) {
+                const nextLine = allLines[j].trim();
+                if (!nextLine) continue;
+                // Stop at next character cue or scene heading
+                if (nextLine.match(/^[A-Z]{2,}[^a-z]*$/) && !nextLine.startsWith('(')) {
+                  break;
+                }
+                if (/^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.|EST\.)/i.test(nextLine)) {
+                  break;
+                }
+                if (nextLine.startsWith('(') && nextLine.endsWith(')')) {
+                  dialogue += `${nextLine} `;
+                } else {
+                  dialogue += nextLine + ' ';
+                }
+              }
+              if (dialogue.trim()) {
+                dialogues.push({ sceneHeading: currentScene, dialogue: dialogue.trim() });
+              }
             }
           }
 
@@ -1188,11 +1240,19 @@ export class AIClient {
           }
 
           let result = `=== ALL DIALOGUE BY ${charName} ===\n`;
-          result += `Found dialogue in ${dialogues.length} scene(s)\n\n`;
+          result += `Found ${dialogues.length} line(s) of dialogue\n\n`;
 
+          // Group by scene
+          const byScene = new Map<string, string[]>();
           for (const d of dialogues) {
-            result += `--- Scene ${d.sceneNum}: ${d.heading} ---\n`;
-            for (const line of d.dialogue) {
+            const existing = byScene.get(d.sceneHeading) || [];
+            existing.push(d.dialogue);
+            byScene.set(d.sceneHeading, existing);
+          }
+
+          for (const [scene, lines] of byScene) {
+            result += `--- ${scene} ---\n`;
+            for (const line of lines) {
               result += `"${line}"\n`;
             }
             result += '\n';
@@ -1204,22 +1264,30 @@ export class AIClient {
         case 'analyze_scene_characters': {
           const sceneNum = args.scene_number;
           const allScenes = await this.dbManager.getScenes();
-          const scene = allScenes.find(s => s.number === sceneNum);
+          const sortedScenes = allScenes.sort((a, b) => (a.startLine || 0) - (b.startLine || 0));
+          const scene = sortedScenes.find(s => s.number === sceneNum);
 
           if (!scene) {
             return `Scene ${sceneNum} not found.`;
           }
 
-          if (!scene.content) {
-            return `Scene ${sceneNum} has no content.`;
+          // Extract scene content from actual screenplay
+          if (!context?.currentContent) {
+            return `No screenplay content available.`;
           }
-
-          // Extract all characters who speak in this scene
-          const lines = scene.content.split('\n');
+          
+          const allLines = context.currentContent.split('\n');
+          const sceneStartLine = scene.startLine || 0;
+          const sceneIdx = sortedScenes.findIndex(s => s.id === scene.id);
+          const sceneEndLine = (sceneIdx < sortedScenes.length - 1) 
+            ? (sortedScenes[sceneIdx + 1].startLine || allLines.length) 
+            : allLines.length;
+          
+          const sceneLines = allLines.slice(sceneStartLine, sceneEndLine);
           const characterData: Map<string, { dialogueCount: number; lines: string[] }> = new Map();
 
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
+          for (let i = 0; i < sceneLines.length; i++) {
+            const line = sceneLines[i].trim();
 
             // Character cue pattern: ALL CAPS, possibly with extension
             const charMatch = line.match(/^([A-Z][A-Z\s'-]+)(\s*\([^)]+\))?$/);
@@ -1231,8 +1299,8 @@ export class AIClient {
 
               // Get their dialogue
               let dialogue = '';
-              for (let j = i + 1; j < lines.length; j++) {
-                const nextLine = lines[j].trim();
+              for (let j = i + 1; j < sceneLines.length; j++) {
+                const nextLine = sceneLines[j].trim();
                 if (!nextLine) continue;
                 if (nextLine.match(/^[A-Z]{2,}[^a-z]*$/) && !nextLine.startsWith('(')) {
                   break;
@@ -1290,37 +1358,40 @@ export class AIClient {
 
           const keywords = eventKeywords[eventType] || [eventType];
 
-          const allScenes = await this.dbManager.getScenes();
-          const sortedScenes = allScenes.sort((a, b) => (a.number || 0) - (b.number || 0));
+          // Use actual screenplay content
+          if (!context?.currentContent) {
+            return `No screenplay content available.`;
+          }
+          
+          const allLines = context.currentContent.split('\n');
+          const matches: Array<{ sceneHeading: string; excerpts: string[] }> = [];
+          let currentScene = 'Before first scene';
 
-          const matches: Array<{ scene: typeof sortedScenes[0]; excerpts: string[] }> = [];
-
-          for (const scene of sortedScenes) {
-            if (!scene.content) continue;
-
-            const lowerContent = scene.content.toLowerCase();
-            const foundKeywords = keywords.filter(kw => lowerContent.includes(kw));
-
+          for (let i = 0; i < allLines.length; i++) {
+            const line = allLines[i];
+            const lowerLine = line.toLowerCase();
+            
+            // Track current scene
+            if (/^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.|EST\.)/i.test(line.trim())) {
+              currentScene = line.trim();
+            }
+            
+            // Check if any keyword matches
+            const foundKeywords = keywords.filter(kw => lowerLine.includes(kw));
             if (foundKeywords.length > 0) {
-              // Extract context around matches
-              const excerpts: string[] = [];
-              const lines = scene.content.split('\n');
-
-              for (let i = 0; i < lines.length; i++) {
-                const lowerLine = lines[i].toLowerCase();
-                if (foundKeywords.some(kw => lowerLine.includes(kw))) {
-                  // Get this line plus surrounding context
-                  const start = Math.max(0, i - 1);
-                  const end = Math.min(lines.length - 1, i + 2);
-                  const context = lines.slice(start, end + 1).join('\n').trim();
-                  if (context && !excerpts.includes(context)) {
-                    excerpts.push(context);
-                  }
+              // Get context around match
+              const start = Math.max(0, i - 1);
+              const end = Math.min(allLines.length - 1, i + 2);
+              const excerpt = allLines.slice(start, end + 1).join('\n').trim();
+              
+              // Add to matches
+              const existing = matches.find(m => m.sceneHeading === currentScene);
+              if (existing) {
+                if (existing.excerpts.length < 3 && !existing.excerpts.includes(excerpt)) {
+                  existing.excerpts.push(excerpt);
                 }
-              }
-
-              if (excerpts.length > 0) {
-                matches.push({ scene, excerpts: excerpts.slice(0, 3) });
+              } else {
+                matches.push({ sceneHeading: currentScene, excerpts: [excerpt] });
               }
             }
           }
@@ -1330,10 +1401,10 @@ export class AIClient {
           }
 
           let result = `=== "${eventType.toUpperCase()}" EVENTS FOUND ===\n`;
-          result += `Found in ${matches.length} scene(s)\n\n`;
+          result += `Found in ${matches.length} location(s)\n\n`;
 
           for (const match of matches) {
-            result += `--- Scene ${match.scene.number}: ${match.scene.heading} ---\n`;
+            result += `--- ${match.sceneHeading} ---\n`;
             for (const excerpt of match.excerpts) {
               result += `"${excerpt}"\n\n`;
             }
